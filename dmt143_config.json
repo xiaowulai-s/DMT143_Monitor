@@ -1,0 +1,10 @@
+{
+  "alarm": {
+    "enabled": false,
+    "dewpoint_low": -80,
+    "dewpoint_high": 20
+  },
+  "refresh_interval": 500,
+  "show_mini_chart": true,
+  "max_history": 1000
+}
