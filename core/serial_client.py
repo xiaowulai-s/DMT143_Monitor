@@ -61,7 +61,7 @@ class DMT143Client:
                 except Exception as e:
                     self.log(f"RS485 控制设置失败: {e}")
 
-            time.sleep(0.5)
+            time.sleep(0.2)
             self.connected = True
             self.log(f"已连接到 {self.port} @ {self.baudrate} baud")
             return True
@@ -103,7 +103,7 @@ class DMT143Client:
                 except Exception as e:
                     self.log(f"RS485 控制设置失败: {e}")
 
-            time.sleep(0.5)
+            time.sleep(0.2)
             self.connected = True
             self.log(f"已重新连接到 {self.port}")
             return True
@@ -131,7 +131,7 @@ class DMT143Client:
             except:
                 pass
 
-    def send_command(self, cmd: str, wait_time: float = 0.5, clear_buffer: bool = True) -> bytes:
+    def send_command(self, cmd: str, wait_time: float = 0.3, clear_buffer: bool = True) -> bytes:
         """发送命令并接收响应
 
         Args:
@@ -265,10 +265,10 @@ class DMT143Client:
         self.serial_port.reset_input_buffer()
 
         # 发送 R 命令启动连续输出
-        response = self.send_command('R', wait_time=0.5, clear_buffer=False)
+        response = self.send_command('R', wait_time=0.3, clear_buffer=False)
 
         # 等待一小段时间让设备开始输出
-        time.sleep(0.3)
+        time.sleep(0.1)
 
         # 清空启动命令的响应
         self.serial_port.reset_input_buffer()
@@ -276,14 +276,14 @@ class DMT143Client:
 
     def stop_continuous_reading(self) -> bool:
         """发送 S 命令停止输出"""
-        response = self.send_command('S', wait_time=0.5)
+        response = self.send_command('S', wait_time=0.3)
         return bool(response)
 
     def reset_device(self) -> bool:
         """重置设备状态，确保可以重新开始"""
         # 先发送 S 停止当前输出
-        self.send_command('S', wait_time=0.3, clear_buffer=False)
-        time.sleep(0.2)
+        self.send_command('S', wait_time=0.2, clear_buffer=False)
+        time.sleep(0.1)
         # 清空缓冲区
         self.serial_port.reset_input_buffer()
         return True

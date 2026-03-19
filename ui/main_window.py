@@ -274,8 +274,6 @@ class MainWindow(QMainWindow):
             QComboBox {
                 padding: 6px 10px;
                 border: 1px solid #bdc3c7;
-                border-radius: 5px;
-                background-color: #ffffff;
                 border-radius: 8px;
                 background-color: #f8f9fa;
             }
@@ -284,6 +282,20 @@ class MainWindow(QMainWindow):
             }
             QComboBox:focus {
                 border-color: #4a90d9;
+            }
+            QComboBox::drop-down {
+                border: none;
+                width: 30px;
+            }
+            QComboBox::down-arrow {
+                image: none;
+                border-left: 5px solid transparent;
+                border-right: 5px solid transparent;
+                border-top: 6px solid #7f8c8d;
+                margin-right: 10px;
+            }
+            QComboBox::down-arrow:hover {
+                border-top-color: #4a90d9;
             }
         """)
         self.port_combo.addItems(self.client.list_ports())
@@ -314,6 +326,7 @@ class MainWindow(QMainWindow):
         # 连接按钮
         self.connect_btn = QPushButton("▶ 连接")
         self.connect_btn.setFixedWidth(90)
+        self.connect_btn.setFixedHeight(36)
         self.connect_btn.setFont(QFont("Microsoft YaHei", 9, QFont.Bold))
         self.connect_btn.setStyleSheet("""
             QPushButton {
@@ -322,11 +335,15 @@ class MainWindow(QMainWindow):
                     stop:0 #27ae60, stop:1 #2ecc71);
                 color: white;
                 border: none;
-                border-radius: 6px;
+                border-radius: 8px;
             }
             QPushButton:hover {
                 background-color: qlineargradient(x1:0, y1:0, x2:1, y2:0,
                     stop:0 #219a52, stop:1 #27ae60);
+            }
+            QPushButton:disabled {
+                background-color: #95a5a6;
+                color: #ccc;
             }
         """)
         self.connect_btn.clicked.connect(self.toggle_connection)
@@ -334,7 +351,8 @@ class MainWindow(QMainWindow):
         
         # 断开按钮
         self.disconnect_btn = QPushButton("⏹ 断开")
-        self.disconnect_btn.setFixedWidth(80)
+        self.disconnect_btn.setFixedWidth(90)
+        self.disconnect_btn.setFixedHeight(36)
         self.disconnect_btn.setFont(QFont("Microsoft YaHei", 9))
         self.disconnect_btn.setEnabled(False)
         self.disconnect_btn.setStyleSheet("""
@@ -352,6 +370,7 @@ class MainWindow(QMainWindow):
             }
             QPushButton:disabled {
                 background-color: #95a5a6;
+                color: #ccc;
             }
         """)
         self.disconnect_btn.clicked.connect(self.disconnect_device)
@@ -439,6 +458,12 @@ class MainWindow(QMainWindow):
         layout = QVBoxLayout(frame)
         layout.setContentsMargins(15, 15, 15, 15)
         layout.setSpacing(10)
+        
+        # 实时曲线标题
+        chart_title = QLabel("📊 实时曲线")
+        chart_title.setFont(QFont("Microsoft YaHei", 11, QFont.Bold))
+        chart_title.setStyleSheet("color: #2c3e50; background: transparent; padding: 3px;")
+        layout.addWidget(chart_title)
         
         # 实时曲线
         self.chart = ChartWidget()
