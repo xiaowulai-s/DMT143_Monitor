@@ -3,7 +3,7 @@
 仪表盘组件 - 优化版
 """
 
-from PyQt5.QtWidgets import QWidget, QLabel, QFrame, QVBoxLayout, QHBoxLayout, QSizePolicy
+from PyQt5.QtWidgets import QWidget, QLabel, QFrame, QVBoxLayout, QHBoxLayout
 from PyQt5.QtCore import Qt, QRect, QPropertyAnimation, QEasingCurve, pyqtProperty
 from PyQt5.QtGui import QFont, QPainter, QColor, QPen, QBrush, QLinearGradient, QConicalGradient
 
@@ -24,10 +24,8 @@ class GaugeWidget(QFrame):
 
     def setup_ui(self):
         """设置UI"""
-        # 自适应：设置最小尺寸，允许拉伸
-        self.setMinimumHeight(120)
-        self.setMinimumWidth(180)
-        self.setSizePolicy(QSizePolicy.Expanding, QSizePolicy.Preferred)
+        self.setFixedHeight(155)
+        self.setMinimumWidth(200)
         self.setStyleSheet("""
             QFrame {
                 background-color: qlineargradient(x1:0, y1:0, x2:1, y2:1,
