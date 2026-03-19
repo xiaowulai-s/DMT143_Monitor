@@ -427,7 +427,7 @@ class MainWindow(QMainWindow):
                 border: 1px solid #d0e0f0;
             }
         """)
-        
+
         layout = QVBoxLayout(frame)
         layout.setContentsMargins(15, 15, 15, 15)
         layout.setSpacing(10)
@@ -517,7 +517,11 @@ class MainWindow(QMainWindow):
         device_info_layout.addLayout(info_layout)
         layout.addWidget(device_info_frame)
 
+<<<<<<< HEAD
         # 标题
+=======
+        # 实时数据标题
+>>>>>>> 55320fb35104b0616132bfdbc85cbd3b10090bf0
         panel_title = QLabel("📊 实时数据")
         panel_title.setFont(QFont("Microsoft YaHei", 11, QFont.Bold))
         panel_title.setStyleSheet("color: #2c3e50; background: transparent; padding: 3px;")

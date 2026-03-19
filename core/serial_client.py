@@ -282,10 +282,11 @@ class DMT143Client:
     def reset_device(self) -> bool:
         """重置设备状态，确保可以重新开始"""
         # 先发送 S 停止当前输出
-        self.send_command('S', wait_time=0.2, clear_buffer=False)
-        time.sleep(0.1)
+        self.send_command('S', wait_time=0.3, clear_buffer=False)
+        time.sleep(0.5)  # 等待设备稳定
         # 清空缓冲区
         self.serial_port.reset_input_buffer()
+        self.serial_port.reset_output_buffer()
         return True
 
     def read_data(self, timeout: float = 0.5) -> Optional[dict]:
