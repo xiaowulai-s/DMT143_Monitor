@@ -116,8 +116,8 @@ class MainWindow(QMainWindow):
     def init_ui(self):
         """初始化UI"""
         self.setWindowTitle("DMT143 露点监控系统 v1.0")
-        # 窗口最小尺寸
-        self.setMinimumSize(1200, 850)
+        # 窗口自适应：设置较小的最小尺寸
+        self.setMinimumSize(800, 600)
 
         # 设置应用样式
         self.set_style()
