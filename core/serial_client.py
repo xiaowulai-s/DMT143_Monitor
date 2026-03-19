@@ -77,6 +77,42 @@ class DMT143Client:
         self.connected = False
         self.log("已断开连接")
 
+    def reconnect(self) -> bool:
+        """重新连接（用于硬件断开后重连）"""
+        try:
+            # 关闭旧端口
+            if self.serial_port and self.serial_port.is_open:
+                self.serial_port.close()
+
+            # 重新打开端口
+            self.serial_port = serial.Serial(
+                port=self.port,
+                baudrate=self.baudrate,
+                bytesize=serial.EIGHTBITS,
+                parity=serial.PARITY_NONE,
+                stopbits=serial.STOPBITS_ONE,
+                timeout=1.0,
+                write_timeout=5.0
+            )
+
+            # RS485 半双工控制
+            if self.rs485_mode:
+                try:
+                    self.serial_port.rts = False
+                    self.serial_port.dtr = False
+                except Exception as e:
+                    self.log(f"RS485 控制设置失败: {e}")
+
+            time.sleep(0.5)
+            self.connected = True
+            self.log(f"已重新连接到 {self.port}")
+            return True
+
+        except Exception as e:
+            self.log(f"重连失败: {e}")
+            self.connected = False
+            return False
+
     def _rs485_send(self, data: bytes):
         """RS485 发送模式"""
         if self.rs485_mode and self.serial_port:
@@ -225,8 +261,15 @@ class DMT143Client:
 
     def start_continuous_reading(self) -> bool:
         """发送 R 命令开始连续输出"""
-        # 不清空缓冲区，避免丢失后续数据
+        # 先清空缓冲区，确保干净的起始状态
+        self.serial_port.reset_input_buffer()
+
+        # 发送 R 命令启动连续输出
         response = self.send_command('R', wait_time=0.5, clear_buffer=False)
+
+        # 等待一小段时间让设备开始输出
+        time.sleep(0.3)
+
         # 清空启动命令的响应
         self.serial_port.reset_input_buffer()
         return True
@@ -235,6 +278,15 @@ class DMT143Client:
         """发送 S 命令停止输出"""
         response = self.send_command('S', wait_time=0.5)
         return bool(response)
+
+    def reset_device(self) -> bool:
+        """重置设备状态，确保可以重新开始"""
+        # 先发送 S 停止当前输出
+        self.send_command('S', wait_time=0.3, clear_buffer=False)
+        time.sleep(0.2)
+        # 清空缓冲区
+        self.serial_port.reset_input_buffer()
+        return True
 
     def read_data(self, timeout: float = 0.5) -> Optional[dict]:
         """读取数据（从缓冲区）- 按行读取

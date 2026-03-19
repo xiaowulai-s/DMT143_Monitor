@@ -32,21 +32,45 @@ CONFIG_FILE = "dmt143_config.json"
 class ReadThread(QThread):
     """读取数据线程"""
     data_received = pyqtSignal(dict)
-    status_changed = pyqtSignal(bool)
+    status_changed = pyqtSignal(str)
     error_occurred = pyqtSignal(str)
 
-    def __init__(self, client: DMT143Client):
+    def __init__(self, client: DMT143Client, main_window):
         super().__init__()
         self.client = client
+        self.main_window = main_window
         self.running = True
+        self.no_data_count = 0
+        self.max_no_data = 10  # 连续10次无数据则尝试重连
 
     def run(self):
         while self.running:
             if self.client.connected:
                 data = self.client.read_data()
                 if data:
+                    self.no_data_count = 0
                     self.data_received.emit(data)
+                else:
+                    self.no_data_count += 1
+                    # 连续多次无数据，可能是硬件断开
+                    if self.no_data_count >= self.max_no_data:
+                        self.handle_reconnect()
             time.sleep(0.1)
+
+    def handle_reconnect(self):
+        """处理硬件断开后的重连"""
+        self.no_data_count = 0
+        self.status_changed.emit("正在尝试重连...")
+
+        # 重连设备
+        if self.client.reconnect():
+            # 重新初始化设备
+            self.client.reset_device()
+            self.client.set_output_format()
+            self.client.start_continuous_reading()
+            self.status_changed.emit("✅ 硬件重连成功")
+        else:
+            self.error_occurred.emit("硬件重连失败，请检查设备连接")
 
     def stop(self):
         self.running = False
@@ -554,27 +578,31 @@ class MainWindow(QMainWindow):
             self.connect_btn.setEnabled(False)
             self.disconnect_btn.setEnabled(True)
             self.port_combo.setEnabled(False)
-            
+
             # 更新状态
             mode_text = "RS485" if self.client.rs485_mode else "RS232"
             self.status_text.setText(f"🟢 已连接 ({mode_text})")
             self.statusBar().showMessage(f"✅ 已连接到: {port} ({mode_text}模式)")
-            
+
+            # 重置设备状态，确保可以重新开始
+            self.client.reset_device()
+            self.log("设备状态已重置")
+
             # 设置输出格式
             self.client.set_output_format()
             self.log("已设置输出格式: Tdf Tdfa H2O")
-            
+
             # 启动连续读取
             self.client.start_continuous_reading()
             self.log("已启动连续数据输出")
-            
+
             # 启动读取线程
-            self.read_thread = ReadThread(self.client)
+            self.read_thread = ReadThread(self.client, self)
             self.read_thread.data_received.connect(self.on_data_received)
             self.read_thread.status_changed.connect(self.on_connection_status)
             self.read_thread.error_occurred.connect(self.on_error)
             self.read_thread.start()
-            
+
             self.log(f"✅ 已成功连接到 {port} ({mode_text}模式)")
         else:
             QMessageBox.critical(self, "❌ 错误", "连接失败，请检查设备是否正确连接")
@@ -644,17 +672,10 @@ class MainWindow(QMainWindow):
                 self.chart.add_data(dewpoint)
                 self.current_value_label.setText(f"{dewpoint:.2f} °C")
 
-    def on_connection_status(self, connected: bool):
-        """连接状态变化"""
-        if not connected:
-            self.status_text.setText("🔴 断开")
-            self.statusBar().showMessage("连接断开，尝试重连...")
-            self.log("连接已断开，尝试重连...")
-            
-            if self.client.reconnect():
-                self.log("✅ 重连成功")
-            else:
-                self.disconnect_device()
+    def on_connection_status(self, message: str):
+        """连接状态变化（用于显示重连状态）"""
+        self.statusBar().showMessage(message)
+        self.log(message)
 
     def on_error(self, error: str):
         """错误处理"""
