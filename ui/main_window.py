@@ -72,7 +72,8 @@ class MainWindow(QMainWindow):
             },
             'refresh_interval': 500,
             'show_mini_chart': True,
-            'max_history': 1000
+            'max_history': 1000,
+            'rs485_mode': True  # RS485模式
         }
         
         # 线程
@@ -546,14 +547,26 @@ class MainWindow(QMainWindow):
         self.client.port = port
         self.client.set_log_callback(self.log)
         
+        # 设置RS485模式
+        self.client.rs485_mode = self.settings.get('rs485_mode', True)
+        
         if self.client.connect():
             self.connect_btn.setEnabled(False)
             self.disconnect_btn.setEnabled(True)
             self.port_combo.setEnabled(False)
             
             # 更新状态
-            self.status_text.setText("🟢 已连接")
-            self.statusBar().showMessage(f"✅ 已连接到: {port}")
+            mode_text = "RS485" if self.client.rs485_mode else "RS232"
+            self.status_text.setText(f"🟢 已连接 ({mode_text})")
+            self.statusBar().showMessage(f"✅ 已连接到: {port} ({mode_text}模式)")
+            
+            # 设置输出格式
+            self.client.set_output_format()
+            self.log("已设置输出格式: Tdf Tdfa H2O")
+            
+            # 启动连续读取
+            self.client.start_continuous_reading()
+            self.log("已启动连续数据输出")
             
             # 启动读取线程
             self.read_thread = ReadThread(self.client)
@@ -562,12 +575,15 @@ class MainWindow(QMainWindow):
             self.read_thread.error_occurred.connect(self.on_error)
             self.read_thread.start()
             
-            self.log(f"✅ 已成功连接到 {port}")
+            self.log(f"✅ 已成功连接到 {port} ({mode_text}模式)")
         else:
             QMessageBox.critical(self, "❌ 错误", "连接失败，请检查设备是否正确连接")
 
     def disconnect_device(self):
         """断开连接"""
+        # 先停止数据输出
+        self.client.stop_continuous_reading()
+        
         if self.read_thread:
             self.read_thread.stop()
             self.read_thread = None
@@ -585,32 +601,48 @@ class MainWindow(QMainWindow):
 
     def on_data_received(self, data: dict):
         """数据接收"""
+        # 解析数据值
+        dewpoint = data.get('dewpoint')
+        dewpoint_atm = data.get('dewpoint_atm')
+        h2o_ppm = data.get('h2o_ppm')
+
+        # 显示解析后的数据（带单位）
+        if dewpoint is not None and h2o_ppm is not None:
+            dp_str = f"Tdf={dewpoint:.2f} °C" if dewpoint is not None else "Tdf=--"
+            dp_atm_str = f"Tdfatm={dewpoint_atm:.2f} °C" if dewpoint_atm is not None else "Tdfatm=--"
+            h2o_str = f"H2O={h2o_ppm:.1f} ppm" if h2o_ppm is not None else "H2O=--"
+            self.log(f"[解析] {dp_str} | {dp_atm_str} | {h2o_str}")
+
         self.data_history.add_record(data)
         self.current_data = data
         self.refresh_timer.singleShot(0, self.refresh_display)
 
     def refresh_display(self):
         """刷新显示"""
-        if hasattr(self, 'current_data'):
+        if hasattr(self, 'current_data') and self.current_data:
             data = self.current_data
-            
+
+            # 解析数据值
+            dewpoint = data.get('dewpoint')
+            dewpoint_atm = data.get('dewpoint_atm')
+            h2o_ppm = data.get('h2o_ppm')
+
             alarm = self.settings.get('alarm', {})
             if alarm.get('enabled'):
                 self.dewpoint_gauge.update_value(
-                    data.get('dewpoint'),
+                    dewpoint,
                     alarm.get('dewpoint_low'),
                     alarm.get('dewpoint_high')
                 )
             else:
-                self.dewpoint_gauge.update_value(data.get('dewpoint'))
+                self.dewpoint_gauge.update_value(dewpoint)
             
-            self.dewpoint_atm_gauge.update_value(data.get('dewpoint_atm'))
-            self.h2o_gauge.update_value(data.get('h2o_ppm'))
+            self.dewpoint_atm_gauge.update_value(dewpoint_atm)
+            self.h2o_gauge.update_value(h2o_ppm)
             
-            if data.get('dewpoint') is not None:
-                self.chart.add_data(data.get('dewpoint'))
-                self.mini_chart.add_data(data.get('dewpoint'))
-                self.current_value_label.setText(f"{data.get('dewpoint'):.2f} °C")
+            if dewpoint is not None:
+                self.chart.add_data(dewpoint)
+                self.current_value_label.setText(f"{dewpoint:.2f} °C")
 
     def on_connection_status(self, connected: bool):
         """连接状态变化"""
