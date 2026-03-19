@@ -207,7 +207,7 @@ class MainWindow(QMainWindow):
         right_info.setSpacing(0)
         right_info.setAlignment(Qt.AlignRight)
         
-        version = QLabel("Version 2.1")
+        version = QLabel("Version 1.0")
         version.setFont(QFont("Arial", 9))
         version.setStyleSheet("color: rgba(255,255,255,0.8); background: transparent;")
         right_info.addWidget(version, 0, Qt.AlignRight)

@@ -194,7 +194,7 @@ class AboutDialog(QDialog):
         layout.addWidget(title)
 
         # 版本
-        version = QLabel("Version 2.0 (PyQt5)")
+        version = QLabel("Version 1.0 (PyQt5)")
         version.setFont(QFont("Arial", 11))
         version.setAlignment(Qt.AlignCenter)
         version.setStyleSheet("color: #7f8c8d;")

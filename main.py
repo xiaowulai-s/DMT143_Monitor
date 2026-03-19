@@ -18,7 +18,7 @@ def main():
     
     # 设置应用信息
     app.setApplicationName("DMT143 Monitor")
-    app.setApplicationVersion("2.0")
+    app.setApplicationVersion("1.0")
     app.setOrganizationName("QianYiHui")
     
     # 创建主窗口
