@@ -115,9 +115,10 @@ class MainWindow(QMainWindow):
 
     def init_ui(self):
         """初始化UI"""
-        self.setWindowTitle("DMT143 露点监控系统 v2.0")
-        self.setMinimumSize(1200, 850)
-        
+        self.setWindowTitle("DMT143 露点监控系统 v1.0")
+        # 窗口自适应：设置较小的最小尺寸
+        self.setMinimumSize(800, 600)
+
         # 设置应用样式
         self.set_style()
         
@@ -135,19 +136,23 @@ class MainWindow(QMainWindow):
         # 连接控制
         self.create_connection_panel(main_layout)
 
-        # 主内容区
-        content_layout = QHBoxLayout()
-        content_layout.setSpacing(12)
-        
+        # 主内容区 - 使用 Splitter 实现自适应拉伸
+        content_splitter = QSplitter(Qt.Horizontal)
+        content_splitter.setSpacing(12)
+
         # 左侧 - 仪表盘
         left_panel = self.create_gauge_panel()
-        content_layout.addWidget(left_panel, 1)
-        
+        content_splitter.addWidget(left_panel)
+
         # 右侧 - 图表和日志
         right_panel = self.create_right_panel()
-        content_layout.addWidget(right_panel, 2)
-        
-        main_layout.addLayout(content_layout)
+        content_splitter.addWidget(right_panel)
+
+        # 设置左右面板比例 (1:2)
+        content_splitter.setStretchFactor(0, 1)
+        content_splitter.setStretchFactor(1, 2)
+
+        main_layout.addWidget(content_splitter)
 
         # 状态栏
         self.create_status_bar()
