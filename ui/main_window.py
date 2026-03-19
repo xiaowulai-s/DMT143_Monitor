@@ -138,7 +138,6 @@ class MainWindow(QMainWindow):
 
         # 主内容区 - 使用 Splitter 实现自适应拉伸
         content_splitter = QSplitter(Qt.Horizontal)
-        content_splitter.setSpacing(12)
 
         # 左侧 - 仪表盘
         left_panel = self.create_gauge_panel()
