@@ -10,7 +10,7 @@ from datetime import datetime
 from typing import Optional
 
 from PyQt5.QtWidgets import (
-    QMainWindow, QWidget, QVBoxLayout, QHBoxLayout,
+    QMainWindow, QWidget, QVBoxLayout, QHBoxLayout, QGridLayout,
     QLabel, QPushButton, QComboBox, QTextEdit,
     QMenuBar, QMenu, QAction, QStatusBar,
     QFrame, QSplitter, QMessageBox, QFileDialog,
@@ -427,28 +427,113 @@ class MainWindow(QMainWindow):
                 border: 1px solid #d0e0f0;
             }
         """)
-        
+
         layout = QVBoxLayout(frame)
         layout.setContentsMargins(15, 15, 15, 15)
         layout.setSpacing(10)
-        
-        # 标题
+
+        # 设备信息区域
+        device_info_frame = QFrame()
+        device_info_frame.setStyleSheet("""
+            QFrame {
+                background-color: #f0f7ff;
+                border-radius: 8px;
+                border: 1px solid #d0e0f0;
+            }
+        """)
+        device_info_layout = QVBoxLayout(device_info_frame)
+        device_info_layout.setContentsMargins(12, 10, 12, 10)
+        device_info_layout.setSpacing(6)
+
+        device_info_title = QLabel("📱 设备信息")
+        device_info_title.setFont(QFont("Microsoft YaHei", 10, QFont.Bold))
+        device_info_title.setStyleSheet("color: #2c3e50; background: transparent;")
+        device_info_layout.addWidget(device_info_title)
+
+        # 设备信息标签
+        info_layout = QGridLayout()
+        info_layout.setSpacing(8)
+
+        # 型号
+        model_label = QLabel("型号:")
+        model_label.setFont(QFont("Microsoft YaHei", 9))
+        model_label.setStyleSheet("color: #7f8c8d; background: transparent;")
+        self.device_model_value = QLabel("--")
+        self.device_model_value.setFont(QFont("Microsoft YaHei", 9, QFont.Bold))
+        self.device_model_value.setStyleSheet("color: #2c3e50; background: transparent;")
+        info_layout.addWidget(model_label, 0, 0)
+        info_layout.addWidget(self.device_model_value, 0, 1)
+
+        # 序列号
+        serial_label = QLabel("序列号:")
+        serial_label.setFont(QFont("Microsoft YaHei", 9))
+        serial_label.setStyleSheet("color: #7f8c8d; background: transparent;")
+        self.device_serial_value = QLabel("--")
+        self.device_serial_value.setFont(QFont("Consolas", 9))
+        self.device_serial_value.setStyleSheet("color: #2c3e50; background: transparent;")
+        info_layout.addWidget(serial_label, 1, 0)
+        info_layout.addWidget(self.device_serial_value, 1, 1)
+
+        # 波特率
+        baud_label = QLabel("波特率:")
+        baud_label.setFont(QFont("Microsoft YaHei", 9))
+        baud_label.setStyleSheet("color: #7f8c8d; background: transparent;")
+        self.device_baud_value = QLabel("--")
+        self.device_baud_value.setFont(QFont("Consolas", 9))
+        self.device_baud_value.setStyleSheet("color: #2c3e50; background: transparent;")
+        info_layout.addWidget(baud_label, 2, 0)
+        info_layout.addWidget(self.device_baud_value, 2, 1)
+
+        # 串口模式
+        mode_label = QLabel("模式:")
+        mode_label.setFont(QFont("Microsoft YaHei", 9))
+        mode_label.setStyleSheet("color: #7f8c8d; background: transparent;")
+        self.device_mode_value = QLabel("--")
+        self.device_mode_value.setFont(QFont("Consolas", 9))
+        self.device_mode_value.setStyleSheet("color: #2c3e50; background: transparent;")
+        info_layout.addWidget(mode_label, 3, 0)
+        info_layout.addWidget(self.device_mode_value, 3, 1)
+
+        # 地址
+        addr_label = QLabel("地址:")
+        addr_label.setFont(QFont("Microsoft YaHei", 9))
+        addr_label.setStyleSheet("color: #7f8c8d; background: transparent;")
+        self.device_addr_value = QLabel("--")
+        self.device_addr_value.setFont(QFont("Consolas", 9))
+        self.device_addr_value.setStyleSheet("color: #2c3e50; background: transparent;")
+        info_layout.addWidget(addr_label, 4, 0)
+        info_layout.addWidget(self.device_addr_value, 4, 1)
+
+        # 输出间隔
+        interval_label = QLabel("输出间隔:")
+        interval_label.setFont(QFont("Microsoft YaHei", 9))
+        interval_label.setStyleSheet("color: #7f8c8d; background: transparent;")
+        self.device_interval_value = QLabel("--")
+        self.device_interval_value.setFont(QFont("Consolas", 9))
+        self.device_interval_value.setStyleSheet("color: #2c3e50; background: transparent;")
+        info_layout.addWidget(interval_label, 5, 0)
+        info_layout.addWidget(self.device_interval_value, 5, 1)
+
+        device_info_layout.addLayout(info_layout)
+        layout.addWidget(device_info_frame)
+
+        # 实时数据标题
         panel_title = QLabel("📊 实时数据")
         panel_title.setFont(QFont("Microsoft YaHei", 11, QFont.Bold))
         panel_title.setStyleSheet("color: #2c3e50; background: transparent; padding: 3px;")
         layout.addWidget(panel_title)
-        
+
         # 仪表盘
         self.dewpoint_gauge = GaugeWidget(
             "露点温度 Tdf", "°C", -100, 20
         )
         layout.addWidget(self.dewpoint_gauge)
-        
+
         self.dewpoint_atm_gauge = GaugeWidget(
             "标准气压露点 Tdfatm", "°C", -100, 20
         )
         layout.addWidget(self.dewpoint_atm_gauge)
-        
+
         self.h2o_gauge = GaugeWidget(
             "体积含水量 H2O", "ppm", 0, 1000
         )
@@ -654,6 +739,12 @@ class MainWindow(QMainWindow):
         self.status_text.setText("🔴 未连接")
         self.statusBar().showMessage("已断开连接")
         self.device_info_label.setText("📱 设备: --")
+        self.device_model_value.setText("--")
+        self.device_serial_value.setText("--")
+        self.device_baud_value.setText("--")
+        self.device_mode_value.setText("--")
+        self.device_addr_value.setText("--")
+        self.device_interval_value.setText("--")
 
         self.log("已断开连接")
 
@@ -693,6 +784,12 @@ class MainWindow(QMainWindow):
         self.port_combo.setEnabled(True)
         self.status_text.setText("🔴 已断开")
         self.device_info_label.setText("📱 设备: --")
+        self.device_model_value.setText("--")
+        self.device_serial_value.setText("--")
+        self.device_baud_value.setText("--")
+        self.device_mode_value.setText("--")
+        self.device_addr_value.setText("--")
+        self.device_interval_value.setText("--")
 
         # 启动自动重连检测
         self.start_auto_reconnect()
@@ -765,8 +862,23 @@ class MainWindow(QMainWindow):
         if device_info:
             model = device_info.get('model', 'Unknown')
             serial = device_info.get('serial', 'Unknown')
+            sci = device_info.get('sci', 'Unknown')
+            mode = device_info.get('mode', 'Unknown')
+            addr = device_info.get('address', '--')
+            interval = device_info.get('interval', 'Unknown')
+
+            # 更新顶部栏设备信息
             self.device_info_label.setText(f"📱 {model} ({serial})")
-            self.log(f"📱 设备已更新: {model}, SN: {serial}")
+
+            # 更新左侧面板设备信息
+            self.device_model_value.setText(model)
+            self.device_serial_value.setText(serial)
+            self.device_baud_value.setText(sci)
+            self.device_mode_value.setText(mode)
+            self.device_addr_value.setText(str(addr))
+            self.device_interval_value.setText(interval)
+
+            self.log(f"📱 设备: {model}, SN: {serial}, {sci}, {mode}, ADDR: {addr}")
         else:
             self.log("⚠️ 无法获取设备信息")
 
