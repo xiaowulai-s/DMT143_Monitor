@@ -422,19 +422,7 @@ class MainWindow(QMainWindow):
             "体积含水量 H2O", "ppm", 0, 1000
         )
         layout.addWidget(self.h2o_gauge)
-        
-        # 迷你曲线
-        self.mini_chart = MiniChartWidget()
-        self.mini_chart.setFixedHeight(100)
-        self.mini_chart.setStyleSheet("""
-            QFrame {
-                background-color: white;
-                border-radius: 10px;
-                border: 1px solid #d0e0f0;
-            }
-        """)
-        layout.addWidget(self.mini_chart)
-        
+
         return frame
 
     def create_right_panel(self) -> QFrame:
