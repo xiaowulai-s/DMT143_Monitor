@@ -179,7 +179,7 @@ class DMT143Client:
 
     def get_device_info(self) -> dict:
         """获取设备信息"""
-        response = self.send_command('?', wait_time=1.0)
+        response = self.send_command('?', wait_time=1.5)
         info = {}
 
         if response:

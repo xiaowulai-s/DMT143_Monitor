@@ -34,6 +34,7 @@ class ReadThread(QThread):
     data_received = pyqtSignal(dict)
     status_changed = pyqtSignal(str)
     error_occurred = pyqtSignal(str)
+    device_disconnected = pyqtSignal()
 
     def __init__(self, client: DMT143Client, main_window):
         super().__init__()
@@ -58,19 +59,10 @@ class ReadThread(QThread):
             time.sleep(0.1)
 
     def handle_reconnect(self):
-        """处理硬件断开后的重连"""
+        """检测到设备断开，通知主窗口处理"""
         self.no_data_count = 0
-        self.status_changed.emit("正在尝试重连...")
-
-        # 重连设备
-        if self.client.reconnect():
-            # 重新初始化设备
-            self.client.reset_device()
-            self.client.set_output_format()
-            self.client.start_continuous_reading()
-            self.status_changed.emit("✅ 硬件重连成功")
-        else:
-            self.error_occurred.emit("硬件重连失败，请检查设备连接")
+        self.status_changed.emit("设备已断开，等待重新连接...")
+        self.device_disconnected.emit()
 
     def stop(self):
         self.running = False
@@ -113,9 +105,15 @@ class MainWindow(QMainWindow):
         self.refresh_timer.timeout.connect(self.refresh_display)
         self.refresh_timer.start(self.settings['refresh_interval'])
 
+        # 自动重连检测定时器
+        self.auto_reconnect_timer = QTimer()
+        self.auto_reconnect_timer.timeout.connect(self.check_auto_reconnect)
+        self.auto_reconnect_enabled = False
+        self.last_known_port = ""
+
     def init_ui(self):
         """初始化UI"""
-        self.setWindowTitle("DMT143 露点监控系统 v2.0")
+        self.setWindowTitle("DMT143 露点监控系统 v2.1")
         self.setMinimumSize(1200, 850)
         
         # 设置应用样式
@@ -378,6 +376,20 @@ class MainWindow(QMainWindow):
         
         conn_layout.addStretch()
         
+        # 设备信息显示
+        self.device_info_label = QLabel("📱 设备: --")
+        self.device_info_label.setFont(QFont("Microsoft YaHei", 9))
+        self.device_info_label.setStyleSheet("""
+            color: #7f8c8d; 
+            background: transparent;
+            padding: 5px 10px;
+            border-radius: 6px;
+            border: 1px solid #e8e8e8;
+        """)
+        conn_layout.addWidget(self.device_info_label)
+        
+        conn_layout.addSpacing(10)
+        
         # 当前值显示
         value_frame = QFrame()
         value_frame.setStyleSheet("""
@@ -601,6 +613,9 @@ class MainWindow(QMainWindow):
             self.client.reset_device()
             self.log("设备状态已重置")
 
+            # 获取并显示设备信息
+            self.update_device_info()
+
             # 设置输出格式
             self.client.set_output_format()
             self.log("已设置输出格式: Tdf Tdfa H2O")
@@ -614,6 +629,7 @@ class MainWindow(QMainWindow):
             self.read_thread.data_received.connect(self.on_data_received)
             self.read_thread.status_changed.connect(self.on_connection_status)
             self.read_thread.error_occurred.connect(self.on_error)
+            self.read_thread.device_disconnected.connect(self.on_device_disconnected)
             self.read_thread.start()
 
             self.log(f"✅ 已成功连接到 {port} ({mode_text}模式)")
@@ -624,21 +640,70 @@ class MainWindow(QMainWindow):
         """断开连接"""
         # 先停止数据输出
         self.client.stop_continuous_reading()
-        
+
         if self.read_thread:
             self.read_thread.stop()
             self.read_thread = None
-        
+
         self.client.disconnect()
-        
+
         self.connect_btn.setEnabled(True)
         self.disconnect_btn.setEnabled(False)
         self.port_combo.setEnabled(True)
-        
+
         self.status_text.setText("🔴 未连接")
         self.statusBar().showMessage("已断开连接")
-        
+        self.device_info_label.setText("📱 设备: --")
+
         self.log("已断开连接")
+
+        # 停止自动重连检测
+        self.auto_reconnect_timer.stop()
+        self.auto_reconnect_enabled = False
+
+    def check_auto_reconnect(self):
+        """检测是否有新设备连接"""
+        if not self.auto_reconnect_enabled:
+            return
+
+        current_ports = self.client.list_ports()
+
+        # 检查之前监听的端口是否有新设备
+        if self.last_known_port and self.last_known_port in current_ports:
+            # 端口上有设备，尝试自动连接
+            self.auto_reconnect_timer.stop()
+            self.auto_reconnect_enabled = False
+            self.log(f"检测到设备在 {self.last_known_port}，正在自动连接...")
+            self.connect_device()
+
+    def on_device_disconnected(self):
+        """设备断开连接处理"""
+        # 停止读取线程
+        if self.read_thread:
+            self.read_thread.stop()
+            self.read_thread = None
+
+        # 断开串口连接
+        if self.client.connected:
+            self.client.disconnect()
+
+        # 更新UI状态
+        self.connect_btn.setEnabled(True)
+        self.disconnect_btn.setEnabled(False)
+        self.port_combo.setEnabled(True)
+        self.status_text.setText("🔴 已断开")
+        self.device_info_label.setText("📱 设备: --")
+
+        # 启动自动重连检测
+        self.start_auto_reconnect()
+
+    def start_auto_reconnect(self):
+        """启动自动重连检测"""
+        self.last_known_port = self.port_combo.currentText()
+        if self.last_known_port:
+            self.auto_reconnect_enabled = True
+            self.auto_reconnect_timer.start(1000)  # 每秒检测一次
+            self.log(f"已开启自动重连检测，监控 {self.last_known_port}")
 
     def on_data_received(self, data: dict):
         """数据接收"""
@@ -693,6 +758,17 @@ class MainWindow(QMainWindow):
     def on_error(self, error: str):
         """错误处理"""
         self.log(f"❌ 错误: {error}")
+
+    def update_device_info(self):
+        """更新设备信息（重连后或设备更换时调用）"""
+        device_info = self.client.get_device_info()
+        if device_info:
+            model = device_info.get('model', 'Unknown')
+            serial = device_info.get('serial', 'Unknown')
+            self.device_info_label.setText(f"📱 {model} ({serial})")
+            self.log(f"📱 设备已更新: {model}, SN: {serial}")
+        else:
+            self.log("⚠️ 无法获取设备信息")
 
     def log(self, message: str):
         """输出日志"""
