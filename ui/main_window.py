@@ -112,7 +112,7 @@ class MainWindow(QMainWindow):
 
     def init_ui(self):
         """初始化UI"""
-        self.setWindowTitle("DMT143 露点监控系统 v2.4")
+        self.setWindowTitle("DMT143 露点监控系统 v2.5")
         self.setMinimumSize(1200, 850)
         
         # 设置应用样式
@@ -627,6 +627,16 @@ class MainWindow(QMainWindow):
     def create_menu(self):
         """创建菜单"""
         menubar = self.menuBar()
+        
+        # 菜单栏右侧添加 "Power By QianYiHui" 标签
+        self.power_by_label = QLabel("Power By QianYiHui")
+        self.power_by_label.setFont(QFont("Arial", 8))
+        self.power_by_label.setStyleSheet("""
+            color: #4a90d9;
+            padding: 5px 15px;
+            background: transparent;
+        """)
+        menubar.setCornerWidget(self.power_by_label, Qt.TopRightCorner)
 
 
         # 文件菜单
