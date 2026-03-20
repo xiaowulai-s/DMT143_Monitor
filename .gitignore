@@ -1,44 +1,45 @@
-# Python
 __pycache__/
 *.pyc
 *.pyo
 *.pyd
 .Python
-*.egg-info/
-dist/
 build/
-
-# IDE
-.vscode/
-.idea/
-*.swp
-*.swo
-
-# Test/Debug files
-test_*.py
-debug_*.py
-check_*.py
-diagnose_*.py
-*_test.py
-extract_*.py
-loopback_test.py
-modbus_*.py
-mode_switch_*.py
-power_*.py
-raw_data_*.py
-rs485_*.py
-
-# Screenshots
-*.png
-screenshot*.png
-monitor*.png
-
-# Documents
-*.pdf
-
-# Node
-package-lock.json
-
-# OS
+dist/*.exe
+dist/*.json
+dist/logs/
+output/*.exe
+*.egg-info/
+.pytest_cache/
+.coverage
+htmlcov/
+logs/*.txt
 .DS_Store
 Thumbs.db
+*.spec
+*_test.py
+debug_*.py
+test_*.py
+diagnose*.py
+extract_*.py
+modbus_*.py
+rs485_*.py
+interactive_test.py
+loopback_test.py
+mode_switch_test.py
+power_wake_test.py
+raw_data_monitor.py
+hardware_diagnose.py
+manual_diagnose.py
+package-lock.json
+*.png
+*.pdf
+commands.md
+修复与测试指南.md
+问题分析报告.md
+硬件连接问题诊断报告.md
+硬件连接诊断清单.md
+诊断工具总览.md
+诊断与修复总结.md
+模式切换诊断报告.md
+RS485诊断总结.md
+GitHub上传指南.md

@@ -29,29 +29,6 @@ class SettingsDialog(QDialog):
         """设置UI"""
         layout = QVBoxLayout(self)
 
-        # 报警设置
-        alarm_group = QGroupBox("报警设置")
-        alarm_layout = QFormLayout()
-        
-        self.alarm_enabled = QCheckBox("启用报警")
-        self.alarm_enabled.setToolTip("当测量值超出范围时显示警告")
-        alarm_layout.addRow("", self.alarm_enabled)
-        
-        self.alarm_low = QSpinBox()
-        self.alarm_low.setRange(-100, 100)
-        self.alarm_low.setSuffix(" °C")
-        self.alarm_low.setToolTip("最低报警阈值")
-        alarm_layout.addRow("下限:", self.alarm_low)
-        
-        self.alarm_high = QSpinBox()
-        self.alarm_high.setRange(-100, 100)
-        self.alarm_high.setSuffix(" °C")
-        self.alarm_high.setToolTip("最高报警阈值")
-        alarm_layout.addRow("上限:", self.alarm_high)
-        
-        alarm_group.setLayout(alarm_layout)
-        layout.addWidget(alarm_group)
-
         # 刷新设置
         refresh_group = QGroupBox("刷新设置")
         refresh_layout = QFormLayout()
@@ -147,11 +124,6 @@ class SettingsDialog(QDialog):
 
     def load_settings(self):
         """加载当前设置"""
-        alarm = self.current_settings.get('alarm', {})
-        self.alarm_enabled.setChecked(alarm.get('enabled', False))
-        self.alarm_low.setValue(alarm.get('dewpoint_low', -80))
-        self.alarm_high.setValue(alarm.get('dewpoint_high', 20))
-        
         self.refresh_interval.setValue(self.current_settings.get('refresh_interval', 500))
         self.show_mini_chart.setChecked(self.current_settings.get('show_mini_chart', True))
         self.max_history.setValue(self.current_settings.get('max_history', 1000))
@@ -159,11 +131,6 @@ class SettingsDialog(QDialog):
     def get_settings(self) -> dict:
         """获取设置"""
         return {
-            'alarm': {
-                'enabled': self.alarm_enabled.isChecked(),
-                'dewpoint_low': self.alarm_low.value(),
-                'dewpoint_high': self.alarm_high.value()
-            },
             'refresh_interval': self.refresh_interval.value(),
             'show_mini_chart': self.show_mini_chart.isChecked(),
             'max_history': self.max_history.value()
@@ -194,7 +161,7 @@ class AboutDialog(QDialog):
         layout.addWidget(title)
 
         # 版本
-        version = QLabel("Version 1.0 (PyQt5)")
+        version = QLabel("Version 2.5")
         version.setFont(QFont("Arial", 11))
         version.setAlignment(Qt.AlignCenter)
         version.setStyleSheet("color: #7f8c8d;")
@@ -203,9 +170,9 @@ class AboutDialog(QDialog):
         # 说明
         info = QLabel(
             "基于 PyQt5 构建的现代化监控系统\n"
-            "支持实时数据采集、曲线显示、报警提醒等功能\n\n"
+            "支持实时数据采集、曲线显示、历史日志等功能\n\n"
             "硬件: DMT143 露点变送器\n"
-            "通信: RS485 / 串口"
+            "通信: RS485 / RS232 串口"
         )
         info.setFont(QFont("Arial", 10))
         info.setAlignment(Qt.AlignCenter)

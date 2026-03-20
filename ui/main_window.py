@@ -16,7 +16,7 @@ from PyQt5.QtWidgets import (
     QFrame, QSplitter, QMessageBox, QFileDialog,
     QScrollArea, QGroupBox, QDialog, QListWidget, QListWidgetItem
 )
-from PyQt5.QtCore import Qt, QTimer, QThread, pyqtSignal
+from PyQt5.QtCore import Qt, QTimer, QThread, pyqtSignal, QObject
 from PyQt5.QtGui import QFont, QColor, QPalette
 
 from core.serial_client import DMT143Client
@@ -81,11 +81,6 @@ class MainWindow(QMainWindow):
         
         # 设置
         self.settings = {
-            'alarm': {
-                'enabled': False,
-                'dewpoint_low': -80,
-                'dewpoint_high': 20
-            },
             'refresh_interval': 500,
             'show_mini_chart': True,
             'max_history': 1000,
@@ -233,7 +228,7 @@ class MainWindow(QMainWindow):
         right_info.setSpacing(0)
         right_info.setAlignment(Qt.AlignRight)
         
-        version = QLabel("Version 1.0")
+        version = QLabel("Version 2.5")
         version.setFont(QFont("Arial", 9))
         version.setStyleSheet("color: rgba(255,255,255,0.8); background: transparent;")
         right_info.addWidget(version, 0, Qt.AlignRight)
@@ -633,6 +628,7 @@ class MainWindow(QMainWindow):
         """创建菜单"""
         menubar = self.menuBar()
 
+
         # 文件菜单
         file_menu = menubar.addMenu("📁 文件")
 
@@ -649,19 +645,11 @@ class MainWindow(QMainWindow):
         exit_action.triggered.connect(self.close)
         file_menu.addAction(exit_action)
 
-        # 设置菜单
-        settings_menu = menubar.addMenu("⚙️ 设置")
-
-        alarm_action = QAction("🔔 报警设置", self)
-        alarm_action.triggered.connect(self.show_settings)
-        settings_menu.addAction(alarm_action)
-
-        # 帮助菜单
-        help_menu = menubar.addMenu("❓ 帮助")
-
+        # 关于菜单
+        about_menu = menubar.addMenu("❓ 帮助")
         about_action = QAction("ℹ️ 关于", self)
         about_action.triggered.connect(self.show_about)
-        help_menu.addAction(about_action)
+        about_menu.addAction(about_action)
 
     def refresh_ports(self):
         """刷新端口列表"""
@@ -771,10 +759,20 @@ class MainWindow(QMainWindow):
         if not os.path.exists(log_dir):
             os.makedirs(log_dir)
 
-        # 生成文件名
+        # 生成文件名（使用微秒确保唯一）
         timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
         filename = f"{timestamp}.txt"
         file_path = os.path.join(log_dir, filename)
+
+        # 如果文件已存在，尝试删除旧文件
+        if os.path.exists(file_path):
+            try:
+                os.remove(file_path)
+            except PermissionError:
+                # 文件被占用，尝试换一个名字
+                timestamp = datetime.now().strftime("%Y%m%d_%H%M%S_%f")
+                filename = f"{timestamp}.txt"
+                file_path = os.path.join(log_dir, filename)
 
         try:
             with open(file_path, 'w', encoding='utf-8') as f:
@@ -874,16 +872,7 @@ class MainWindow(QMainWindow):
             dewpoint_atm = data.get('dewpoint_atm')
             h2o_ppm = data.get('h2o_ppm')
 
-            alarm = self.settings.get('alarm', {})
-            if alarm.get('enabled'):
-                self.dewpoint_gauge.update_value(
-                    dewpoint,
-                    alarm.get('dewpoint_low'),
-                    alarm.get('dewpoint_high')
-                )
-            else:
-                self.dewpoint_gauge.update_value(dewpoint)
-            
+            self.dewpoint_gauge.update_value(dewpoint)
             self.dewpoint_atm_gauge.update_value(dewpoint_atm)
             self.h2o_gauge.update_value(h2o_ppm)
             
@@ -1029,8 +1018,8 @@ class MainWindow(QMainWindow):
         left_layout.addWidget(list_label)
 
         self.log_list_widget = QListWidget()
-        self.log_list_widget.setSelectionMode(QListWidget.MultiSelection)
         self.log_list_widget.setFont(QFont("Consolas", 9))
+        self.log_list_widget.setSelectionMode(QListWidget.SingleSelection)
         self.log_list_widget.setStyleSheet("""
             QListWidget {
                 border: 1px solid #ecf0f1;
@@ -1042,10 +1031,16 @@ class MainWindow(QMainWindow):
                 color: white;
             }
         """)
-        self.log_list_widget.itemClicked.connect(lambda: self.load_selected_log(self.history_log_text, self.log_list_widget))
-        left_layout.addWidget(self.log_list_widget)
 
-        # 加载日志文件到列表
+        # 多选模式状态 - 使用行索引跟踪手动选择（QListWidgetItem不可哈希）
+        manually_selected = set()  # 存储选中的行索引
+        multi_select_mode = [False]
+        current_row = [-1]  # 当前聚焦的行（单选模式用）
+
+        # 初始设置为 NoSelection，完全手动控制
+        self.log_list_widget.setSelectionMode(QListWidget.NoSelection)
+
+        # 日志内容显示区域（在操作按钮之前，以便eventFilter可以使用）
         log_dir = "logs"
         if not os.path.exists(log_dir):
             os.makedirs(log_dir)
@@ -1057,13 +1052,162 @@ class MainWindow(QMainWindow):
             item.setData(Qt.UserRole, os.path.join(log_dir, f))
             self.log_list_widget.addItem(item)
 
+        left_layout.addWidget(self.log_list_widget)
+
+        # 创建日志内容显示区域（在操作按钮之前，以便eventFilter可以使用）
+        log_content_frame = QFrame()
+        log_content_frame.setStyleSheet("""
+            QFrame {
+                background-color: white;
+                border-radius: 8px;
+                border: 1px solid #d0e0f0;
+            }
+        """)
+        log_content_layout = QVBoxLayout(log_content_frame)
+
+        log_content_label = QLabel("日志内容:")
+        log_content_label.setFont(QFont("Microsoft YaHei", 9))
+        log_content_layout.addWidget(log_content_label)
+
+        history_log_text = QTextEdit()
+        history_log_text.setReadOnly(True)
+        history_log_text.setFont(QFont("Consolas", 9))
+        history_log_text.setStyleSheet("""
+            QTextEdit {
+                background-color: #fafafa;
+                border: 1px solid #ecf0f1;
+                border-radius: 8px;
+                padding: 8px;
+                color: #2c3e50;
+            }
+        """)
+        log_content_layout.addWidget(history_log_text)
+
+        content_layout.addWidget(log_content_frame, 2)
+
+        # 创建eventFilter - 使用行索引跟踪手动选择
+        class LogEventFilter(QObject):
+            def __init__(self, list_widget, text_widget, multi_mode, selected_rows, current_row, update_btn_callback):
+                super().__init__()
+                self.list_widget = list_widget
+                self.text_widget = text_widget
+                self.multi_mode = multi_mode
+                self.selected_rows = selected_rows  # 存储行索引的集合
+                self.current_row = current_row  # 当前聚焦的行索引
+                self.update_btn_callback = update_btn_callback
+
+            def eventFilter(self, obj, event):
+                if event.type() == event.MouseButtonPress and obj == self.list_widget.viewport():
+                    item = self.list_widget.itemAt(event.pos())
+                    if item:
+                        row = self.list_widget.row(item)
+                        if self.multi_mode[0]:
+                            # 多选模式：手动切换选中状态
+                            if row in self.selected_rows:
+                                # 已选中 -> 取消选中
+                                self.selected_rows.discard(row)
+                            else:
+                                # 未选中 -> 添加到选中
+                                self.selected_rows.add(row)
+                            self._update_visual_selection()
+                            self.list_widget.setCurrentItem(item)
+                            self.list_widget.scrollToItem(item, self.list_widget.PositionAtCenter)
+                            self.update_btn_callback()
+                        else:
+                            # 单选模式：更新当前聚焦行并加载内容
+                            self.current_row[0] = row
+                            self._update_visual_selection()
+                            self.list_widget.setCurrentItem(item)
+                            self.list_widget.scrollToItem(item, self.list_widget.PositionAtCenter)
+                            file_path = item.data(Qt.UserRole)
+                            if file_path and os.path.exists(file_path):
+                                try:
+                                    with open(file_path, 'r', encoding='utf-8') as f:
+                                        content = f.read()
+                                    self.text_widget.setPlainText(content)
+                                except Exception as e:
+                                    self.text_widget.setPlainText(f"读取文件失败: {str(e)}")
+                            else:
+                                self.text_widget.clear()
+                            self.update_btn_callback()
+                        return True
+                return super().eventFilter(obj, event)
+
+            def _update_visual_selection(self):
+                """更新视觉选中状态 - 批量操作优化"""
+                from PyQt5.QtCore import QItemSelection
+                selection_model = self.list_widget.selectionModel()
+                selection_model.blockSignals(True)
+
+                if self.multi_mode[0]:
+                    # 多选模式：批量选择
+                    if self.selected_rows:
+                        selection = QItemSelection()
+                        for row in self.selected_rows:
+                            if 0 <= row < self.list_widget.count():
+                                idx = self.list_widget.model().index(row, 0)
+                                selection.select(idx, idx)
+                        selection_model.select(selection, selection_model.ClearAndSelect)
+                    else:
+                        selection_model.clear()
+                else:
+                    # 单选模式：选择当前行
+                    if self.current_row[0] >= 0 and self.current_row[0] < self.list_widget.count():
+                        idx = self.list_widget.model().index(self.current_row[0], 0)
+                        selection_model.select(idx, selection_model.ClearAndSelect)
+                    else:
+                        selection_model.clear()
+
+                selection_model.blockSignals(False)
+
+        def update_delete_button():
+            """更新删除按钮状态"""
+            if multi_select_mode[0]:
+                # 多选模式
+                selected_count = len(manually_selected)
+                delete_btn.setEnabled(selected_count > 0)
+                if selected_count > 0:
+                    delete_btn.setText(f"🗑 删除({selected_count})")
+                else:
+                    delete_btn.setText("🗑 删除")
+            else:
+                # 单选模式：当前有选中项时启用删除
+                if current_row[0] >= 0 and current_row[0] < self.log_list_widget.count():
+                    delete_btn.setEnabled(True)
+                    delete_btn.setText("🗑 删除")
+                else:
+                    delete_btn.setEnabled(False)
+                    delete_btn.setText("🗑 删除")
+
+        log_event_filter = LogEventFilter(self.log_list_widget, history_log_text, multi_select_mode, manually_selected, current_row, update_delete_button)
+        self.log_list_widget.viewport().installEventFilter(log_event_filter)
+
         # 操作按钮区域
         btn_area_layout = QHBoxLayout()
 
-        # 全选按钮
+        # 多选/单选切换按钮
+        multi_select_btn = QPushButton("多选")
+        multi_select_btn.setFixedWidth(60)
+        multi_select_btn.setFont(QFont("Microsoft YaHei", 8))
+        multi_select_btn.setStyleSheet("""
+            QPushButton {
+                padding: 4px 8px;
+                background-color: #3498db;
+                color: white;
+                border: none;
+                border-radius: 4px;
+            }
+            QPushButton:hover {
+                background-color: #2980b9;
+            }
+        """)
+        btn_area_layout.addWidget(multi_select_btn)
+
+        # 全选按钮（默认隐藏）
         select_all_btn = QPushButton("全选")
         select_all_btn.setFixedWidth(60)
         select_all_btn.setFont(QFont("Microsoft YaHei", 8))
+        select_all_btn.setVisible(False)
         select_all_btn.setStyleSheet("""
             QPushButton {
                 padding: 4px 8px;
@@ -1076,14 +1220,14 @@ class MainWindow(QMainWindow):
                 background-color: #7f8c8d;
             }
         """)
-        select_all_btn.clicked.connect(self.log_list_widget.selectAll)
         btn_area_layout.addWidget(select_all_btn)
 
-        # 取消选择按钮
-        deselect_btn = QPushButton("取消")
-        deselect_btn.setFixedWidth(60)
-        deselect_btn.setFont(QFont("Microsoft YaHei", 8))
-        deselect_btn.setStyleSheet("""
+        # 删除选中按钮
+        delete_btn = QPushButton("🗑 删除")
+        delete_btn.setFixedWidth(70)
+        delete_btn.setFont(QFont("Microsoft YaHei", 8))
+        delete_btn.setEnabled(False)
+        delete_btn.setStyleSheet("""
             QPushButton {
                 padding: 4px 8px;
                 background-color: #95a5a6;
@@ -1091,30 +1235,13 @@ class MainWindow(QMainWindow):
                 border: none;
                 border-radius: 4px;
             }
-            QPushButton:hover {
-                background-color: #7f8c8d;
-            }
-        """)
-        deselect_btn.clicked.connect(self.log_list_widget.clearSelection)
-        btn_area_layout.addWidget(deselect_btn)
-
-        # 删除选中按钮
-        delete_btn = QPushButton("🗑 删除")
-        delete_btn.setFixedWidth(70)
-        delete_btn.setFont(QFont("Microsoft YaHei", 8))
-        delete_btn.setStyleSheet("""
-            QPushButton {
-                padding: 4px 8px;
+            QPushButton:enabled {
                 background-color: #e74c3c;
-                color: white;
-                border: none;
-                border-radius: 4px;
             }
-            QPushButton:hover {
+            QPushButton:enabled:hover {
                 background-color: #c0392b;
             }
         """)
-        delete_btn.clicked.connect(lambda: self.delete_selected_logs(self.log_list_widget, self.history_log_text))
         btn_area_layout.addWidget(delete_btn)
 
         left_layout.addLayout(btn_area_layout)
@@ -1139,36 +1266,154 @@ class MainWindow(QMainWindow):
 
         content_layout.addWidget(left_frame, 1)
 
-        # 右侧 - 日志内容显示
-        log_content_frame = QFrame()
-        log_content_frame.setStyleSheet("""
-            QFrame {
-                background-color: white;
-                border-radius: 8px;
-                border: 1px solid #d0e0f0;
-            }
-        """)
-        log_content_layout = QVBoxLayout(log_content_frame)
+        def toggle_multi_select():
+            """切换多选/单选模式"""
+            if not multi_select_mode[0]:
+                # 切换到多选模式
+                multi_select_mode[0] = True
+                manually_selected.clear()  # 清除之前的选中状态
+                current_row[0] = -1  # 清除当前聚焦行
+                multi_select_btn.setText("取消")
+                multi_select_btn.setStyleSheet("""
+                    QPushButton {
+                        padding: 4px 8px;
+                        background-color: #e74c3c;
+                        color: white;
+                        border: none;
+                        border-radius: 4px;
+                    }
+                    QPushButton:hover {
+                        background-color: #c0392b;
+                    }
+                """)
+                select_all_btn.setVisible(True)
+                delete_btn.setEnabled(False)
+                delete_btn.setText("🗑 删除")
+                self.log_list_widget.setSelectionMode(QListWidget.NoSelection)
+                log_event_filter._update_visual_selection()
+            else:
+                # 切换回单选模式
+                multi_select_mode[0] = False
+                manually_selected.clear()  # 清除选中状态
+                multi_select_btn.setText("多选")
+                multi_select_btn.setStyleSheet("""
+                    QPushButton {
+                        padding: 4px 8px;
+                        background-color: #3498db;
+                        color: white;
+                        border: none;
+                        border-radius: 4px;
+                    }
+                    QPushButton:hover {
+                        background-color: #2980b9;
+                    }
+                """)
+                select_all_btn.setVisible(False)
+                self.log_list_widget.setSelectionMode(QListWidget.NoSelection)
+                history_log_text.clear()
+                update_delete_button()
+                log_event_filter._update_visual_selection()
 
-        log_content_label = QLabel("日志内容:")
-        log_content_label.setFont(QFont("Microsoft YaHei", 9))
-        log_content_layout.addWidget(log_content_label)
+        multi_select_btn.clicked.connect(toggle_multi_select)
 
-        self.history_log_text = QTextEdit()
-        self.history_log_text.setReadOnly(True)
-        self.history_log_text.setFont(QFont("Consolas", 9))
-        self.history_log_text.setStyleSheet("""
-            QTextEdit {
-                background-color: #fafafa;
-                border: 1px solid #ecf0f1;
-                border-radius: 8px;
-                padding: 8px;
-                color: #2c3e50;
-            }
-        """)
-        log_content_layout.addWidget(self.history_log_text)
+        def update_delete_button():
+            """更新删除按钮状态"""
+            if not multi_select_mode[0]:
+                delete_btn.setEnabled(False)
+                delete_btn.setText("🗑 删除")
+                return
 
-        content_layout.addWidget(log_content_frame, 2)
+            selected_count = len(manually_selected)
+            delete_btn.setEnabled(selected_count > 0)
+            if selected_count > 0:
+                delete_btn.setText(f"🗑 删除({selected_count})")
+            else:
+                delete_btn.setText("🗑 删除")
+
+        # 全选按钮点击处理
+        def select_all_items():
+            """全选所有日志"""
+            manually_selected.clear()
+            for i in range(self.log_list_widget.count()):
+                manually_selected.add(i)
+            log_event_filter._update_visual_selection()
+            update_delete_button()
+
+        select_all_btn.clicked.connect(select_all_items)
+
+        def delete_selected_logs():
+            """删除选中的日志"""
+            if multi_select_mode[0]:
+                # 多选模式：删除所有选中项
+                if not manually_selected:
+                    return
+
+                count = len(manually_selected)
+                reply = QMessageBox.question(
+                    self, "⚠️ 确认删除",
+                    f"确定要删除选中的 {count} 个日志文件吗？\n此操作不可恢复！",
+                    QMessageBox.Yes | QMessageBox.No,
+                    QMessageBox.No
+                )
+
+                if reply == QMessageBox.Yes:
+                    deleted_count = 0
+                    # 从后往前删除行，避免索引变化
+                    for row in sorted(manually_selected, reverse=True):
+                        item = self.log_list_widget.item(row)
+                        if item:
+                            file_path = item.data(Qt.UserRole)
+                            if file_path and os.path.exists(file_path):
+                                try:
+                                    os.remove(file_path)
+                                    deleted_count += 1
+                                except Exception as e:
+                                    self.log(f"⚠️ 删除失败: {file_path}")
+                            self.log_list_widget.takeItem(row)
+
+                    # 清除选中状态
+                    manually_selected.clear()
+                    history_log_text.clear()
+                    self.log(f"🗑 已删除 {deleted_count} 个日志文件")
+
+                    # 删除后退出多选模式
+                    toggle_multi_select()
+            else:
+                # 单选模式：删除当前聚焦项
+                if current_row[0] < 0:
+                    return
+
+                row = current_row[0]
+                item = self.log_list_widget.item(row)
+                if not item:
+                    return
+
+                file_path = item.data(Qt.UserRole)
+                file_name = item.text()
+
+                reply = QMessageBox.question(
+                    self, "⚠️ 确认删除",
+                    f"确定要删除日志文件吗？\n{file_name}\n此操作不可恢复！",
+                    QMessageBox.Yes | QMessageBox.No,
+                    QMessageBox.No
+                )
+
+                if reply == QMessageBox.Yes:
+                    if file_path and os.path.exists(file_path):
+                        try:
+                            os.remove(file_path)
+                            self.log(f"🗑 已删除: {file_name}")
+                        except Exception as e:
+                            self.log(f"⚠️ 删除失败: {file_path}")
+                            return
+
+                    self.log_list_widget.takeItem(row)
+                    current_row[0] = -1
+                    history_log_text.clear()
+                    update_delete_button()
+                    log_event_filter._update_visual_selection()
+
+        delete_btn.clicked.connect(delete_selected_logs)
 
         layout.addLayout(content_layout)
 
@@ -1198,68 +1443,6 @@ class MainWindow(QMainWindow):
         layout.addLayout(bottom_layout)
 
         dialog.exec_()
-
-    def load_selected_log(self, text_widget, list_widget):
-        """加载选中的日志文件"""
-        selected_items = list_widget.selectedItems()
-        if not selected_items:
-            text_widget.clear()
-            return
-
-        # 加载最后一个选中的文件
-        item = selected_items[-1]
-        file_path = item.data(Qt.UserRole)
-        if not file_path or not os.path.exists(file_path):
-            return
-
-        try:
-            with open(file_path, 'r', encoding='utf-8') as f:
-                content = f.read()
-            text_widget.setPlainText(content)
-        except Exception as e:
-            text_widget.setPlainText(f"读取文件失败: {str(e)}")
-
-    def delete_selected_logs(self, list_widget, text_widget):
-        """删除选中的日志文件"""
-        selected_items = list_widget.selectedItems()
-        if not selected_items:
-            QMessageBox.information(self, "⚠️ 提示", "请先选择要删除的日志")
-            return
-
-        # 确认删除
-        count = len(selected_items)
-        reply = QMessageBox.question(
-            self, "⚠️ 确认删除",
-            f"确定要删除选中的 {count} 个日志文件吗？\n此操作不可恢复！",
-            QMessageBox.Yes | QMessageBox.No,
-            QMessageBox.No
-        )
-
-        if reply == QMessageBox.Yes:
-            deleted_count = 0
-            for item in selected_items:
-                file_path = item.data(Qt.UserRole)
-                if file_path and os.path.exists(file_path):
-                    try:
-                        os.remove(file_path)
-                        deleted_count += 1
-                        # 从列表中移除
-                        row = list_widget.row(item)
-                        list_widget.takeItem(row)
-                    except Exception as e:
-                        self.log(f"⚠️ 删除失败: {file_path}")
-
-            text_widget.clear()
-            self.log(f"🗑 已删除 {deleted_count} 个日志文件")
-
-    def open_log_folder(self):
-        """打开日志文件夹"""
-        log_dir = "logs"
-        if not os.path.exists(log_dir):
-            os.makedirs(log_dir)
-
-        # Windows系统打开文件夹
-        os.startfile(log_dir)
 
     def open_log_folder(self):
         """打开日志文件夹"""
