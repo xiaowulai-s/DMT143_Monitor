@@ -4,20 +4,27 @@
 
 ```
 DMT143_Monitor/
-├── main.py                 # 程序入口
-├── requirements.txt        # 依赖列表
-├── core/
+├── main.py                        # 程序入口
+├── requirements.txt                # 依赖列表
+├── README.md                       # 项目说明
+├── 项目文档.md                     # 详细文档
+├── commands.md                     # 设备命令参考
+├── dmt143_config.json              # 配置文件
+├── icon.ico                        # 应用图标
+├── DMT143_Monitor_v2.5.spec       # PyInstaller打包配置
+├── DMT143 User's Guide.pdf        # 设备用户手册
+├── core/                           # 核心模块
 │   ├── __init__.py
-│   ├── serial_client.py    # 串口通信模块
-│   └── data_parser.py      # 数据解析模块
-├── ui/
+│   ├── serial_client.py           # 串口通信客户端
+│   └── data_parser.py             # 数据解析模块
+├── ui/                             # 界面模块
 │   ├── __init__.py
-│   ├── main_window.py      # 主窗口
-│   ├── gauge_widget.py     # 仪表盘组件
-│   ├── chart_widget.py     # 曲线图表组件
-│   └── settings_dialog.py # 设置对话框
-└── resources/
-    └── __init__.py
+│   ├── main_window.py             # 主窗口
+│   ├── gauge_widget.py            # 仪表盘组件
+│   ├── chart_widget.py            # 图表组件
+│   └── dialogs.py                 # 对话框组件
+└── dist/                           # 发布文件
+    └── DMT143_Monitor_v2.5.exe   # 可执行程序
 ```
 
 ## 功能特性
