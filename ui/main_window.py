@@ -14,7 +14,7 @@ from PyQt5.QtWidgets import (
     QLabel, QPushButton, QComboBox, QTextEdit,
     QMenuBar, QMenu, QAction, QStatusBar,
     QFrame, QSplitter, QMessageBox, QFileDialog,
-    QScrollArea, QGroupBox
+    QScrollArea, QGroupBox, QDialog
 )
 from PyQt5.QtCore import Qt, QTimer, QThread, pyqtSignal
 from PyQt5.QtGui import QFont, QColor, QPalette
@@ -94,6 +94,10 @@ class MainWindow(QMainWindow):
         
         # 线程
         self.read_thread: Optional[ReadThread] = None
+
+        # 日志管理
+        self.session_logs = []  # 当前会话日志列表
+        self.log_file_path = ""  # 当前日志文件路径
         
         # 初始化UI
         self.init_ui()
@@ -113,7 +117,7 @@ class MainWindow(QMainWindow):
 
     def init_ui(self):
         """初始化UI"""
-        self.setWindowTitle("DMT143 露点监控系统 v2.1")
+        self.setWindowTitle("DMT143 露点监控系统 v2.3")
         self.setMinimumSize(1200, 850)
         
         # 设置应用样式
@@ -517,11 +521,7 @@ class MainWindow(QMainWindow):
         device_info_layout.addLayout(info_layout)
         layout.addWidget(device_info_frame)
 
-<<<<<<< HEAD
-        # 标题
-=======
         # 实时数据标题
->>>>>>> 55320fb35104b0616132bfdbc85cbd3b10090bf0
         panel_title = QLabel("📊 实时数据")
         panel_title.setFont(QFont("Microsoft YaHei", 11, QFont.Bold))
         panel_title.setStyleSheet("color: #2c3e50; background: transparent; padding: 3px;")
@@ -601,7 +601,7 @@ class MainWindow(QMainWindow):
             }
         """)
         log_layout.addWidget(self.log_text)
-        
+
         layout.addWidget(log_frame)
         
         return frame
@@ -632,32 +632,33 @@ class MainWindow(QMainWindow):
     def create_menu(self):
         """创建菜单"""
         menubar = self.menuBar()
-        
+
         # 文件菜单
         file_menu = menubar.addMenu("📁 文件")
-        
-        export_action = QAction("📊 导出数据 (CSV)", self)
-        export_action.setShortcut("Ctrl+E")
-        export_action.triggered.connect(self.export_data)
-        file_menu.addAction(export_action)
-        
+
+        # 历史日志
+        history_action = QAction("📁 历史日志", self)
+        history_action.setShortcut("Ctrl+L")
+        history_action.triggered.connect(self.show_log_history)
+        file_menu.addAction(history_action)
+
         file_menu.addSeparator()
-        
+
         exit_action = QAction("🚪 退出", self)
         exit_action.setShortcut("Ctrl+Q")
         exit_action.triggered.connect(self.close)
         file_menu.addAction(exit_action)
-        
+
         # 设置菜单
         settings_menu = menubar.addMenu("⚙️ 设置")
-        
+
         alarm_action = QAction("🔔 报警设置", self)
         alarm_action.triggered.connect(self.show_settings)
         settings_menu.addAction(alarm_action)
-        
+
         # 帮助菜单
         help_menu = menubar.addMenu("❓ 帮助")
-        
+
         about_action = QAction("ℹ️ 关于", self)
         about_action.triggered.connect(self.show_about)
         help_menu.addAction(about_action)
@@ -752,9 +753,48 @@ class MainWindow(QMainWindow):
 
         self.log("已断开连接")
 
+        # 自动保存日志到logs文件夹
+        if self.session_logs:
+            self.auto_save_log()
+
         # 停止自动重连检测
         self.auto_reconnect_timer.stop()
         self.auto_reconnect_enabled = False
+
+    def auto_save_log(self):
+        """自动保存日志到logs文件夹"""
+        if not self.session_logs:
+            return
+
+        # 创建logs目录
+        log_dir = "logs"
+        if not os.path.exists(log_dir):
+            os.makedirs(log_dir)
+
+        # 生成文件名
+        timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
+        filename = f"dmt143_log_{timestamp}.txt"
+        file_path = os.path.join(log_dir, filename)
+
+        try:
+            with open(file_path, 'w', encoding='utf-8') as f:
+                # 写入标题
+                f.write("=" * 60 + "\n")
+                f.write("DMT143 露点监控系统 - 运行日志\n")
+                f.write(f"记录时间: {datetime.now().strftime('%Y-%m-%d %H:%M:%S')}\n")
+                f.write("=" * 60 + "\n\n")
+
+                # 写入日志内容
+                for log_entry in self.session_logs:
+                    f.write(log_entry + "\n")
+
+                f.write("\n" + "=" * 60 + "\n")
+                f.write("日志结束\n")
+
+            self.log_file_path = file_path
+            self.log(f"📁 日志已自动保存: logs/{filename}")
+        except Exception as e:
+            self.log(f"⚠️ 自动保存日志失败: {str(e)}")
 
     def check_auto_reconnect(self):
         """检测是否有新设备连接"""
@@ -882,17 +922,260 @@ class MainWindow(QMainWindow):
             self.device_addr_value.setText(str(addr))
             self.device_interval_value.setText(interval)
 
-            self.log(f"📱 设备: {model}, SN: {serial}, {sci}, {mode}, ADDR: {addr}")
+            # 详细输出设备信息到日志
+            self.log("=" * 50)
+            self.log("📋 设备详细信息:")
+            self.log(f"   型号: {model}")
+            self.log(f"   序列号: {serial}")
+            self.log(f"   波特率: {sci}")
+            self.log(f"   串口模式: {mode}")
+            self.log(f"   设备地址: {addr}")
+            self.log(f"   输出间隔: {interval}")
+            self.log("=" * 50)
         else:
             self.log("⚠️ 无法获取设备信息")
 
     def log(self, message: str):
         """输出日志"""
         timestamp = datetime.now().strftime("%H:%M:%S")
-        self.log_text.append(f"[{timestamp}] {message}")
+        log_entry = f"[{timestamp}] {message}"
+
+        # 添加到显示
+        self.log_text.append(log_entry)
         self.log_text.verticalScrollBar().setValue(
             self.log_text.verticalScrollBar().maximum()
         )
+
+        # 保存到日志列表
+        self.session_logs.append(log_entry)
+
+    def save_log_to_file(self):
+        """保存当前日志到文件"""
+        if not self.session_logs:
+            QMessageBox.information(self, "📝 提示", "当前没有日志可保存")
+            return
+
+        # 生成默认文件名
+        timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
+        default_filename = f"dmt143_log_{timestamp}.txt"
+
+        # 打开文件对话框
+        file_path, _ = QFileDialog.getSaveFileName(
+            self,
+            "保存日志",
+            default_filename,
+            "文本文件 (*.txt);;所有文件 (*.*)"
+        )
+
+        if file_path:
+            try:
+                with open(file_path, 'w', encoding='utf-8') as f:
+                    # 写入标题
+                    f.write("=" * 60 + "\n")
+                    f.write("DMT143 露点监控系统 - 运行日志\n")
+                    f.write(f"记录时间: {datetime.now().strftime('%Y-%m-%d %H:%M:%S')}\n")
+                    f.write("=" * 60 + "\n\n")
+
+                    # 写入日志内容
+                    for log_entry in self.session_logs:
+                        f.write(log_entry + "\n")
+
+                    f.write("\n" + "=" * 60 + "\n")
+                    f.write("日志结束\n")
+
+                self.log_file_path = file_path
+                self.log(f"✅ 日志已保存到: {file_path}")
+                QMessageBox.information(self, "✅ 成功", f"日志已保存到:\n{file_path}")
+            except Exception as e:
+                QMessageBox.critical(self, "❌ 错误", f"保存日志失败:\n{str(e)}")
+
+    def show_log_history(self):
+        """显示历史日志对话框"""
+        # 创建对话框
+        dialog = QDialog(self)
+        dialog.setWindowTitle("📁 历史日志查看器")
+        dialog.setMinimumSize(700, 500)
+        dialog.setStyleSheet("""
+            QDialog {
+                background-color: #f5f5f5;
+            }
+        """)
+
+        layout = QVBoxLayout(dialog)
+
+        # 标题
+        title = QLabel("📁 历史日志文件")
+        title.setFont(QFont("Microsoft YaHei", 11, QFont.Bold))
+        title.setStyleSheet("color: #2c3e50; padding: 5px;")
+        layout.addWidget(title)
+
+        # 文件列表和日志内容区域
+        content_layout = QHBoxLayout()
+
+        # 文件列表
+        file_list_frame = QFrame()
+        file_list_frame.setStyleSheet("""
+            QFrame {
+                background-color: white;
+                border-radius: 8px;
+                border: 1px solid #d0e0f0;
+            }
+        """)
+        file_list_layout = QVBoxLayout(file_list_frame)
+
+        file_list_label = QLabel("选择日志文件:")
+        file_list_label.setFont(QFont("Microsoft YaHei", 9))
+        file_list_layout.addWidget(file_list_label)
+
+        self.log_file_list = QComboBox()
+        self.log_file_list.setFixedWidth(200)
+        self.log_file_list.setFont(QFont("Microsoft YaHei", 9))
+        file_list_layout.addWidget(self.log_file_list)
+
+        # 加载logs文件夹中的日志文件
+        log_dir = "logs"
+        if os.path.exists(log_dir):
+            log_files = [f for f in os.listdir(log_dir) if f.endswith('.txt')]
+            log_files.sort(reverse=True)
+            for f in log_files:
+                self.log_file_list.addItem(f, os.path.join(log_dir, f))
+
+        # 如果有当前会话保存的日志文件，也添加
+        if self.log_file_path and os.path.exists(self.log_file_path):
+            filename = os.path.basename(self.log_file_path)
+            if self.log_file_list.findText(filename) == -1:
+                self.log_file_list.addItem(filename, self.log_file_path)
+
+        file_list_layout.addStretch()
+
+        # 打开文件夹按钮
+        open_folder_btn = QPushButton("📂 打开日志文件夹")
+        open_folder_btn.setFont(QFont("Microsoft YaHei", 9))
+        open_folder_btn.setStyleSheet("""
+            QPushButton {
+                padding: 5px 10px;
+                background-color: #95a5a6;
+                color: white;
+                border: none;
+                border-radius: 5px;
+            }
+            QPushButton:hover {
+                background-color: #7f8c8d;
+            }
+        """)
+        open_folder_btn.clicked.connect(self.open_log_folder)
+        file_list_layout.addWidget(open_folder_btn)
+
+        content_layout.addWidget(file_list_frame)
+
+        # 日志内容显示
+        log_content_frame = QFrame()
+        log_content_frame.setStyleSheet("""
+            QFrame {
+                background-color: white;
+                border-radius: 8px;
+                border: 1px solid #d0e0f0;
+            }
+        """)
+        log_content_layout = QVBoxLayout(log_content_frame)
+
+        log_content_label = QLabel("日志内容:")
+        log_content_label.setFont(QFont("Microsoft YaHei", 9))
+        log_content_layout.addWidget(log_content_label)
+
+        self.history_log_text = QTextEdit()
+        self.history_log_text.setReadOnly(True)
+        self.history_log_text.setFont(QFont("Consolas", 9))
+        self.history_log_text.setStyleSheet("""
+            QTextEdit {
+                background-color: #fafafa;
+                border: 1px solid #ecf0f1;
+                border-radius: 8px;
+                padding: 8px;
+                color: #2c3e50;
+            }
+        """)
+        log_content_layout.addWidget(self.history_log_text)
+
+        content_layout.addWidget(log_content_frame, 1)
+
+        layout.addLayout(content_layout)
+
+        # 底部按钮
+        btn_layout = QHBoxLayout()
+        btn_layout.addStretch()
+
+        # 加载按钮
+        load_btn = QPushButton("📂 加载")
+        load_btn.setFixedWidth(80)
+        load_btn.setFont(QFont("Microsoft YaHei", 9))
+        load_btn.setStyleSheet("""
+            QPushButton {
+                padding: 5px 10px;
+                background-color: #3498db;
+                color: white;
+                border: none;
+                border-radius: 5px;
+            }
+            QPushButton:hover {
+                background-color: #2980b9;
+            }
+        """)
+        load_btn.clicked.connect(lambda: self.load_selected_log(self.history_log_text, self.log_file_list))
+        btn_layout.addWidget(load_btn)
+
+        # 关闭按钮
+        close_btn = QPushButton("关闭")
+        close_btn.setFixedWidth(80)
+        close_btn.setFont(QFont("Microsoft YaHei", 9))
+        close_btn.setStyleSheet("""
+            QPushButton {
+                padding: 5px 10px;
+                background-color: #95a5a6;
+                color: white;
+                border: none;
+                border-radius: 5px;
+            }
+            QPushButton:hover {
+                background-color: #7f8c8d;
+            }
+        """)
+        close_btn.clicked.connect(dialog.close)
+        btn_layout.addWidget(close_btn)
+
+        layout.addLayout(btn_layout)
+
+        dialog.exec_()
+
+    def load_selected_log(self, text_widget, file_list):
+        """加载选中的日志文件"""
+        index = file_list.currentIndex()
+        if index < 0:
+            return
+
+        file_path = file_list.itemData(index)
+        if not file_path or not os.path.exists(file_path):
+            # 尝试创建logs目录
+            log_dir = "logs"
+            if not os.path.exists(log_dir):
+                os.makedirs(log_dir)
+            return
+
+        try:
+            with open(file_path, 'r', encoding='utf-8') as f:
+                content = f.read()
+            text_widget.setPlainText(content)
+        except Exception as e:
+            text_widget.setPlainText(f"读取文件失败: {str(e)}")
+
+    def open_log_folder(self):
+        """打开日志文件夹"""
+        log_dir = "logs"
+        if not os.path.exists(log_dir):
+            os.makedirs(log_dir)
+
+        # Windows系统打开文件夹
+        os.startfile(log_dir)
 
     def show_settings(self):
         """显示设置对话框"""
@@ -908,28 +1191,6 @@ class MainWindow(QMainWindow):
         """显示关于对话框"""
         dialog = AboutDialog(self)
         dialog.exec_()
-
-    def export_data(self):
-        """导出数据"""
-        if not self.data_history.records:
-            QMessageBox.information(self, "ℹ️ 提示", "没有可导出的数据")
-            return
-        
-        filename, _ = QFileDialog.getSaveFileName(
-            self, "导出数据", 
-            f"dmt143_data_{datetime.now().strftime('%Y%m%d_%H%M%S')}.csv",
-            "CSV文件 (*.csv)"
-        )
-        
-        if filename:
-            try:
-                csv_content = self.data_history.to_csv()
-                with open(filename, 'w', encoding='utf-8') as f:
-                    f.write(csv_content)
-                QMessageBox.information(self, "✅ 成功", f"数据已导出到:\n{filename}")
-                self.log(f"📊 数据已导出: {filename}")
-            except Exception as e:
-                QMessageBox.critical(self, "❌ 错误", f"导出失败: {e}")
 
     def load_config(self):
         """加载配置"""

@@ -61,7 +61,13 @@ class DMT143Client:
                 except Exception as e:
                     self.log(f"RS485 控制设置失败: {e}")
 
-            time.sleep(0.2)
+            # 等待设备就绪
+            time.sleep(0.3)
+
+            # 清空初始缓冲区
+            self.serial_port.reset_input_buffer()
+            self.serial_port.reset_output_buffer()
+
             self.connected = True
             self.log(f"已连接到 {self.port} @ {self.baudrate} baud")
             return True
@@ -84,6 +90,9 @@ class DMT143Client:
             if self.serial_port and self.serial_port.is_open:
                 self.serial_port.close()
 
+            # 等待一小段时间让RS485总线稳定
+            time.sleep(0.3)
+
             # 重新打开端口
             self.serial_port = serial.Serial(
                 port=self.port,
@@ -103,7 +112,13 @@ class DMT143Client:
                 except Exception as e:
                     self.log(f"RS485 控制设置失败: {e}")
 
-            time.sleep(0.2)
+            # 等待更长时间让设备完全上电就绪
+            time.sleep(0.5)
+
+            # 清空缓冲区
+            self.serial_port.reset_input_buffer()
+            self.serial_port.reset_output_buffer()
+
             self.connected = True
             self.log(f"已重新连接到 {self.port}")
             return True
@@ -281,12 +296,22 @@ class DMT143Client:
 
     def reset_device(self) -> bool:
         """重置设备状态，确保可以重新开始"""
-        # 先发送 S 停止当前输出
-        self.send_command('S', wait_time=0.3, clear_buffer=False)
-        time.sleep(0.5)  # 等待设备稳定
-        # 清空缓冲区
+        # 清空可能残留的数据
         self.serial_port.reset_input_buffer()
         self.serial_port.reset_output_buffer()
+
+        # 多次发送 S 命令确保停止输出（RS485总线可能处于不稳定状态）
+        for i in range(3):
+            self.send_command('S', wait_time=0.2, clear_buffer=False)
+            time.sleep(0.2)
+
+        # 等待设备稳定
+        time.sleep(0.5)
+
+        # 再次清空缓冲区
+        self.serial_port.reset_input_buffer()
+        self.serial_port.reset_output_buffer()
+
         return True
 
     def read_data(self, timeout: float = 0.5) -> Optional[dict]:
