@@ -13,16 +13,16 @@ from PyQt5.QtWidgets import (
     QMainWindow, QWidget, QVBoxLayout, QHBoxLayout, QGridLayout,
     QLabel, QPushButton, QComboBox, QTextEdit,
     QMenuBar, QMenu, QAction, QStatusBar,
-    QFrame, QSplitter, QMessageBox, QFileDialog,
-    QScrollArea, QGroupBox, QDialog, QListWidget, QListWidgetItem
+    QFrame, QMessageBox, QFileDialog,
+    QDialog, QListWidget, QListWidgetItem
 )
 from PyQt5.QtCore import Qt, QTimer, QThread, pyqtSignal, QObject
-from PyQt5.QtGui import QFont, QColor, QPalette
+from PyQt5.QtGui import QFont
 
 from core.serial_client import DMT143Client
 from core.data_parser import DataHistory
 from ui.gauge_widget import GaugeWidget
-from ui.chart_widget import ChartWidget, MiniChartWidget
+from ui.chart_widget import ChartWidget
 from ui.dialogs import SettingsDialog, AboutDialog
 
 

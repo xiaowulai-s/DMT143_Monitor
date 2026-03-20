@@ -5,7 +5,7 @@
 
 from PyQt5.QtWidgets import (
     QDialog, QVBoxLayout, QHBoxLayout, QLabel, 
-    QLineEdit, QSpinBox, QCheckBox, QPushButton,
+    QSpinBox, QPushButton,
     QGroupBox, QFormLayout, QDialogButtonBox
 )
 from PyQt5.QtCore import Qt
@@ -46,10 +46,6 @@ class SettingsDialog(QDialog):
         # 显示设置
         display_group = QGroupBox("显示设置")
         display_layout = QFormLayout()
-        
-        self.show_mini_chart = QCheckBox("显示迷你曲线")
-        self.show_mini_chart.setToolTip("在数据面板显示迷你趋势图")
-        display_layout.addRow("", self.show_mini_chart)
         
         self.max_history = QSpinBox()
         self.max_history.setRange(100, 10000)
@@ -125,14 +121,12 @@ class SettingsDialog(QDialog):
     def load_settings(self):
         """加载当前设置"""
         self.refresh_interval.setValue(self.current_settings.get('refresh_interval', 500))
-        self.show_mini_chart.setChecked(self.current_settings.get('show_mini_chart', True))
         self.max_history.setValue(self.current_settings.get('max_history', 1000))
 
     def get_settings(self) -> dict:
         """获取设置"""
         return {
             'refresh_interval': self.refresh_interval.value(),
-            'show_mini_chart': self.show_mini_chart.isChecked(),
             'max_history': self.max_history.value()
         }
 
