@@ -14,7 +14,7 @@ from PyQt5.QtWidgets import (
     QLabel, QPushButton, QComboBox, QTextEdit,
     QMenuBar, QMenu, QAction, QStatusBar,
     QFrame, QSplitter, QMessageBox, QFileDialog,
-    QScrollArea, QGroupBox, QDialog
+    QScrollArea, QGroupBox, QDialog, QListWidget, QListWidgetItem
 )
 from PyQt5.QtCore import Qt, QTimer, QThread, pyqtSignal
 from PyQt5.QtGui import QFont, QColor, QPalette
@@ -117,7 +117,7 @@ class MainWindow(QMainWindow):
 
     def init_ui(self):
         """初始化UI"""
-        self.setWindowTitle("DMT143 露点监控系统 v2.3")
+        self.setWindowTitle("DMT143 露点监控系统 v2.4")
         self.setMinimumSize(1200, 850)
         
         # 设置应用样式
@@ -773,7 +773,7 @@ class MainWindow(QMainWindow):
 
         # 生成文件名
         timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
-        filename = f"dmt143_log_{timestamp}.txt"
+        filename = f"{timestamp}.txt"
         file_path = os.path.join(log_dir, filename)
 
         try:
@@ -957,7 +957,7 @@ class MainWindow(QMainWindow):
 
         # 生成默认文件名
         timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
-        default_filename = f"dmt143_log_{timestamp}.txt"
+        default_filename = f"{timestamp}.txt"
 
         # 打开文件对话框
         file_path, _ = QFileDialog.getSaveFileName(
@@ -994,7 +994,7 @@ class MainWindow(QMainWindow):
         # 创建对话框
         dialog = QDialog(self)
         dialog.setWindowTitle("📁 历史日志查看器")
-        dialog.setMinimumSize(700, 500)
+        dialog.setMinimumSize(800, 550)
         dialog.setStyleSheet("""
             QDialog {
                 background-color: #f5f5f5;
@@ -1004,7 +1004,7 @@ class MainWindow(QMainWindow):
         layout = QVBoxLayout(dialog)
 
         # 标题
-        title = QLabel("📁 历史日志文件")
+        title = QLabel("📁 历史日志")
         title.setFont(QFont("Microsoft YaHei", 11, QFont.Bold))
         title.setStyleSheet("color: #2c3e50; padding: 5px;")
         layout.addWidget(title)
@@ -1012,41 +1012,112 @@ class MainWindow(QMainWindow):
         # 文件列表和日志内容区域
         content_layout = QHBoxLayout()
 
-        # 文件列表
-        file_list_frame = QFrame()
-        file_list_frame.setStyleSheet("""
+        # 左侧 - 文件列表区域
+        left_frame = QFrame()
+        left_frame.setStyleSheet("""
             QFrame {
                 background-color: white;
                 border-radius: 8px;
                 border: 1px solid #d0e0f0;
             }
         """)
-        file_list_layout = QVBoxLayout(file_list_frame)
+        left_layout = QVBoxLayout(left_frame)
 
-        file_list_label = QLabel("选择日志文件:")
-        file_list_label.setFont(QFont("Microsoft YaHei", 9))
-        file_list_layout.addWidget(file_list_label)
+        # 文件列表
+        list_label = QLabel("日志列表:")
+        list_label.setFont(QFont("Microsoft YaHei", 9))
+        left_layout.addWidget(list_label)
 
-        self.log_file_list = QComboBox()
-        self.log_file_list.setFixedWidth(200)
-        self.log_file_list.setFont(QFont("Microsoft YaHei", 9))
-        file_list_layout.addWidget(self.log_file_list)
+        self.log_list_widget = QListWidget()
+        self.log_list_widget.setSelectionMode(QListWidget.MultiSelection)
+        self.log_list_widget.setFont(QFont("Consolas", 9))
+        self.log_list_widget.setStyleSheet("""
+            QListWidget {
+                border: 1px solid #ecf0f1;
+                border-radius: 5px;
+                padding: 5px;
+            }
+            QListWidget::item:selected {
+                background-color: #3498db;
+                color: white;
+            }
+        """)
+        self.log_list_widget.itemClicked.connect(lambda: self.load_selected_log(self.history_log_text, self.log_list_widget))
+        left_layout.addWidget(self.log_list_widget)
 
-        # 加载logs文件夹中的日志文件
+        # 加载日志文件到列表
         log_dir = "logs"
-        if os.path.exists(log_dir):
-            log_files = [f for f in os.listdir(log_dir) if f.endswith('.txt')]
-            log_files.sort(reverse=True)
-            for f in log_files:
-                self.log_file_list.addItem(f, os.path.join(log_dir, f))
+        if not os.path.exists(log_dir):
+            os.makedirs(log_dir)
 
-        # 如果有当前会话保存的日志文件，也添加
-        if self.log_file_path and os.path.exists(self.log_file_path):
-            filename = os.path.basename(self.log_file_path)
-            if self.log_file_list.findText(filename) == -1:
-                self.log_file_list.addItem(filename, self.log_file_path)
+        log_files = [f for f in os.listdir(log_dir) if f.endswith('.txt')]
+        log_files.sort(reverse=True)
+        for f in log_files:
+            item = QListWidgetItem(f)
+            item.setData(Qt.UserRole, os.path.join(log_dir, f))
+            self.log_list_widget.addItem(item)
 
-        file_list_layout.addStretch()
+        # 操作按钮区域
+        btn_area_layout = QHBoxLayout()
+
+        # 全选按钮
+        select_all_btn = QPushButton("全选")
+        select_all_btn.setFixedWidth(60)
+        select_all_btn.setFont(QFont("Microsoft YaHei", 8))
+        select_all_btn.setStyleSheet("""
+            QPushButton {
+                padding: 4px 8px;
+                background-color: #95a5a6;
+                color: white;
+                border: none;
+                border-radius: 4px;
+            }
+            QPushButton:hover {
+                background-color: #7f8c8d;
+            }
+        """)
+        select_all_btn.clicked.connect(self.log_list_widget.selectAll)
+        btn_area_layout.addWidget(select_all_btn)
+
+        # 取消选择按钮
+        deselect_btn = QPushButton("取消")
+        deselect_btn.setFixedWidth(60)
+        deselect_btn.setFont(QFont("Microsoft YaHei", 8))
+        deselect_btn.setStyleSheet("""
+            QPushButton {
+                padding: 4px 8px;
+                background-color: #95a5a6;
+                color: white;
+                border: none;
+                border-radius: 4px;
+            }
+            QPushButton:hover {
+                background-color: #7f8c8d;
+            }
+        """)
+        deselect_btn.clicked.connect(self.log_list_widget.clearSelection)
+        btn_area_layout.addWidget(deselect_btn)
+
+        # 删除选中按钮
+        delete_btn = QPushButton("🗑 删除")
+        delete_btn.setFixedWidth(70)
+        delete_btn.setFont(QFont("Microsoft YaHei", 8))
+        delete_btn.setStyleSheet("""
+            QPushButton {
+                padding: 4px 8px;
+                background-color: #e74c3c;
+                color: white;
+                border: none;
+                border-radius: 4px;
+            }
+            QPushButton:hover {
+                background-color: #c0392b;
+            }
+        """)
+        delete_btn.clicked.connect(lambda: self.delete_selected_logs(self.log_list_widget, self.history_log_text))
+        btn_area_layout.addWidget(delete_btn)
+
+        left_layout.addLayout(btn_area_layout)
 
         # 打开文件夹按钮
         open_folder_btn = QPushButton("📂 打开日志文件夹")
@@ -1064,11 +1135,11 @@ class MainWindow(QMainWindow):
             }
         """)
         open_folder_btn.clicked.connect(self.open_log_folder)
-        file_list_layout.addWidget(open_folder_btn)
+        left_layout.addWidget(open_folder_btn)
 
-        content_layout.addWidget(file_list_frame)
+        content_layout.addWidget(left_frame, 1)
 
-        # 日志内容显示
+        # 右侧 - 日志内容显示
         log_content_frame = QFrame()
         log_content_frame.setStyleSheet("""
             QFrame {
@@ -1097,32 +1168,13 @@ class MainWindow(QMainWindow):
         """)
         log_content_layout.addWidget(self.history_log_text)
 
-        content_layout.addWidget(log_content_frame, 1)
+        content_layout.addWidget(log_content_frame, 2)
 
         layout.addLayout(content_layout)
 
         # 底部按钮
-        btn_layout = QHBoxLayout()
-        btn_layout.addStretch()
-
-        # 加载按钮
-        load_btn = QPushButton("📂 加载")
-        load_btn.setFixedWidth(80)
-        load_btn.setFont(QFont("Microsoft YaHei", 9))
-        load_btn.setStyleSheet("""
-            QPushButton {
-                padding: 5px 10px;
-                background-color: #3498db;
-                color: white;
-                border: none;
-                border-radius: 5px;
-            }
-            QPushButton:hover {
-                background-color: #2980b9;
-            }
-        """)
-        load_btn.clicked.connect(lambda: self.load_selected_log(self.history_log_text, self.log_file_list))
-        btn_layout.addWidget(load_btn)
+        bottom_layout = QHBoxLayout()
+        bottom_layout.addStretch()
 
         # 关闭按钮
         close_btn = QPushButton("关闭")
@@ -1141,24 +1193,23 @@ class MainWindow(QMainWindow):
             }
         """)
         close_btn.clicked.connect(dialog.close)
-        btn_layout.addWidget(close_btn)
+        bottom_layout.addWidget(close_btn)
 
-        layout.addLayout(btn_layout)
+        layout.addLayout(bottom_layout)
 
         dialog.exec_()
 
-    def load_selected_log(self, text_widget, file_list):
+    def load_selected_log(self, text_widget, list_widget):
         """加载选中的日志文件"""
-        index = file_list.currentIndex()
-        if index < 0:
+        selected_items = list_widget.selectedItems()
+        if not selected_items:
+            text_widget.clear()
             return
 
-        file_path = file_list.itemData(index)
+        # 加载最后一个选中的文件
+        item = selected_items[-1]
+        file_path = item.data(Qt.UserRole)
         if not file_path or not os.path.exists(file_path):
-            # 尝试创建logs目录
-            log_dir = "logs"
-            if not os.path.exists(log_dir):
-                os.makedirs(log_dir)
             return
 
         try:
@@ -1167,6 +1218,48 @@ class MainWindow(QMainWindow):
             text_widget.setPlainText(content)
         except Exception as e:
             text_widget.setPlainText(f"读取文件失败: {str(e)}")
+
+    def delete_selected_logs(self, list_widget, text_widget):
+        """删除选中的日志文件"""
+        selected_items = list_widget.selectedItems()
+        if not selected_items:
+            QMessageBox.information(self, "⚠️ 提示", "请先选择要删除的日志")
+            return
+
+        # 确认删除
+        count = len(selected_items)
+        reply = QMessageBox.question(
+            self, "⚠️ 确认删除",
+            f"确定要删除选中的 {count} 个日志文件吗？\n此操作不可恢复！",
+            QMessageBox.Yes | QMessageBox.No,
+            QMessageBox.No
+        )
+
+        if reply == QMessageBox.Yes:
+            deleted_count = 0
+            for item in selected_items:
+                file_path = item.data(Qt.UserRole)
+                if file_path and os.path.exists(file_path):
+                    try:
+                        os.remove(file_path)
+                        deleted_count += 1
+                        # 从列表中移除
+                        row = list_widget.row(item)
+                        list_widget.takeItem(row)
+                    except Exception as e:
+                        self.log(f"⚠️ 删除失败: {file_path}")
+
+            text_widget.clear()
+            self.log(f"🗑 已删除 {deleted_count} 个日志文件")
+
+    def open_log_folder(self):
+        """打开日志文件夹"""
+        log_dir = "logs"
+        if not os.path.exists(log_dir):
+            os.makedirs(log_dir)
+
+        # Windows系统打开文件夹
+        os.startfile(log_dir)
 
     def open_log_folder(self):
         """打开日志文件夹"""
