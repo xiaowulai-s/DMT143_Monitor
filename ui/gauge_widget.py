@@ -91,7 +91,7 @@ class GaugeWidget(QFrame):
             }
         """)
         progress_layout.addWidget(self.progress_fill)
-        bottom_layout.addWidget(self.progress_fill, 1)
+        bottom_layout.addWidget(self.progress_bar, 1)
 
         layout.addLayout(bottom_layout)
 
@@ -107,11 +107,24 @@ class GaugeWidget(QFrame):
         if value is None:
             return
 
+        try:
+            value = float(value)
+        except (TypeError, ValueError):
+            return
+
+        # 防御性检查：值必须为有限数
+        import math
+        if not math.isfinite(value):
+            return
+
         self.current_value = value
         self.value_label.setText(f"{value:.2f}")
 
-        # 计算进度条
-        ratio = (value - self.min_val) / (self.max_val - self.min_val)
+        # 计算进度条（防止除零）
+        if self.max_val == self.min_val:
+            ratio = 0
+        else:
+            ratio = (value - self.min_val) / (self.max_val - self.min_val)
         ratio = max(0, min(1, ratio))
         bar_width = int(180 * ratio)
         self.progress_fill.setFixedWidth(bar_width)

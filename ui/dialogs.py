@@ -155,7 +155,7 @@ class AboutDialog(QDialog):
         layout.addWidget(title)
 
         # 版本
-        version = QLabel("Version 2.5")
+        version = QLabel("Version 2.6.1")
         version.setFont(QFont("Arial", 11))
         version.setAlignment(Qt.AlignCenter)
         version.setStyleSheet("color: #7f8c8d;")

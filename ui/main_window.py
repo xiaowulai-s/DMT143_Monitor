@@ -42,21 +42,33 @@ class ReadThread(QThread):
         self.main_window = main_window
         self.running = True
         self.no_data_count = 0
-        self.max_no_data = 10  # 连续10次无数据则尝试重连
+        self.max_no_data = 50  # 连续 50 次无数据再判定断线（~5-10秒）
 
     def run(self):
+        """主循环——带异常保护，防止线程崩溃导致闪退"""
         while self.running:
-            if self.client.connected:
-                data = self.client.read_data()
-                if data:
-                    self.no_data_count = 0
-                    self.data_received.emit(data)
-                else:
-                    self.no_data_count += 1
-                    # 连续多次无数据，可能是硬件断开
-                    if self.no_data_count >= self.max_no_data:
-                        self.handle_reconnect()
-            time.sleep(0.1)
+            try:
+                if self.client.connected:
+                    data = self.client.read_data()
+                    if data:
+                        self.no_data_count = 0
+                        self.data_received.emit(data)
+                    else:
+                        self.no_data_count += 1
+                        # 连续多次无数据，可能是硬件断开
+                        # 50 次 x (~0.1s sleep + 0.5s timeout) ≈ 30s 容限
+                        if self.no_data_count >= self.max_no_data:
+                            self.handle_reconnect()
+                time.sleep(0.1)
+            except Exception as e:
+                # 线程内部异常不传播到主线程，但通知用户
+                import traceback
+                err_msg = f"ReadThread 异常: {e}\n{traceback.format_exc()}"
+                try:
+                    self.error_occurred.emit(err_msg[:200])
+                except:
+                    pass
+                time.sleep(1)  # 出错后等待一下，避免刷屏
 
     def handle_reconnect(self):
         """检测到设备断开，通知主窗口处理"""
@@ -66,7 +78,10 @@ class ReadThread(QThread):
 
     def stop(self):
         self.running = False
-        self.wait()
+        self.wait(3000)  # 最多等3秒
+        if self.isRunning():
+            self.terminate()
+            self.wait(1000)
 
 
 class MainWindow(QMainWindow):
@@ -99,20 +114,22 @@ class MainWindow(QMainWindow):
         self.load_config()
         self.create_menu()
         
-        # 定时器
+        # 定时器：即时刷新（singleShot 触发）+ 3000ms 保底刷新
         self.refresh_timer = QTimer()
         self.refresh_timer.timeout.connect(self.refresh_display)
-        self.refresh_timer.start(self.settings['refresh_interval'])
+        self.refresh_timer.start(3000)
 
         # 自动重连检测定时器
         self.auto_reconnect_timer = QTimer()
         self.auto_reconnect_timer.timeout.connect(self.check_auto_reconnect)
         self.auto_reconnect_enabled = False
         self.last_known_port = ""
+        self._reconnect_cooldown = 0     # 重连冷却计时（秒）
+        self._last_disconnect_time = 0    # 上次断开时间戳
 
     def init_ui(self):
         """初始化UI"""
-        self.setWindowTitle("DMT143 露点监控系统 v2.5")
+        self.setWindowTitle("DMT143 露点监控系统 v2.6.1")
         self.setMinimumSize(1200, 850)
         
         # 设置应用样式
@@ -148,6 +165,10 @@ class MainWindow(QMainWindow):
 
         # 状态栏
         self.create_status_bar()
+
+        # 传感器诊断状态跟踪
+        self.sensor_diag_status = 'N'  # N=正常, A=校准中, H=清除中, h=加热中
+        self.sensor_status_label = None
 
     def set_style(self):
         """设置整体样式"""
@@ -228,7 +249,7 @@ class MainWindow(QMainWindow):
         right_info.setSpacing(0)
         right_info.setAlignment(Qt.AlignRight)
         
-        version = QLabel("Version 2.5")
+        version = QLabel("Version 2.6.1")
         version.setFont(QFont("Arial", 9))
         version.setStyleSheet("color: rgba(255,255,255,0.8); background: transparent;")
         right_info.addWidget(version, 0, Qt.AlignRight)
@@ -413,7 +434,20 @@ class MainWindow(QMainWindow):
         value_layout.addWidget(self.current_value_label)
         
         conn_layout.addWidget(value_frame)
-        
+
+        # 传感器状态指示
+        self.sensor_status_label = QLabel("📡 正常")
+        self.sensor_status_label.setFont(QFont("Microsoft YaHei", 9, QFont.Bold))
+        self.sensor_status_label.setStyleSheet("""
+            color: #27ae60;
+            background: qlineargradient(x1:0, y1:0, x2:1, y2:1,
+                stop:0 #e8f8e8, stop:1 #d4f4d4);
+            padding: 5px 12px;
+            border-radius: 6px;
+            border: 1px solid #a3d9a3;
+        """)
+        conn_layout.addWidget(self.sensor_status_label)
+
         parent_layout.addWidget(conn_frame)
 
     def create_gauge_panel(self) -> QFrame:
@@ -534,7 +568,7 @@ class MainWindow(QMainWindow):
         layout.addWidget(self.dewpoint_atm_gauge)
 
         self.h2o_gauge = GaugeWidget(
-            "体积含水量 H2O", "ppm", 0, 1000
+            "体积含水量 H2O", "ppm", 0, 50000
         )
         layout.addWidget(self.h2o_gauge)
 
@@ -705,8 +739,8 @@ class MainWindow(QMainWindow):
             self.update_device_info()
 
             # 设置输出格式
-            self.client.set_output_format()
-            self.log("已设置输出格式: Tdf Tdfa H2O")
+            ok = self.client.set_output_format()
+            self.log(f"输出格式: {'OK' if ok else 'FAIL'}")
 
             # 启动连续读取
             self.client.start_continuous_reading()
@@ -726,12 +760,13 @@ class MainWindow(QMainWindow):
 
     def disconnect_device(self):
         """断开连接"""
-        # 先停止数据输出
-        self.client.stop_continuous_reading()
-
+        # 先停读取线程（防止与后续串口写操作冲突）
         if self.read_thread:
             self.read_thread.stop()
             self.read_thread = None
+
+        # 停止数据输出
+        self.client.stop_continuous_reading()
 
         self.client.disconnect()
 
@@ -751,6 +786,11 @@ class MainWindow(QMainWindow):
 
         self.log("已断开连接")
 
+        # 重置传感器状态
+        self.sensor_diag_status = 'N'
+        if self.sensor_status_label:
+            self._update_sensor_status_label('N')
+
         # 自动保存日志到logs文件夹
         if self.session_logs:
             self.auto_save_log()
@@ -764,27 +804,26 @@ class MainWindow(QMainWindow):
         if not self.session_logs:
             return
 
-        # 创建logs目录
-        log_dir = "logs"
-        if not os.path.exists(log_dir):
-            os.makedirs(log_dir)
-
-        # 生成文件名（使用微秒确保唯一）
-        timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
-        filename = f"{timestamp}.txt"
-        file_path = os.path.join(log_dir, filename)
-
-        # 如果文件已存在，尝试删除旧文件
-        if os.path.exists(file_path):
-            try:
-                os.remove(file_path)
-            except PermissionError:
-                # 文件被占用，尝试换一个名字
-                timestamp = datetime.now().strftime("%Y%m%d_%H%M%S_%f")
-                filename = f"{timestamp}.txt"
-                file_path = os.path.join(log_dir, filename)
-
         try:
+            # 创建logs目录
+            log_dir = "logs"
+            if not os.path.exists(log_dir):
+                os.makedirs(log_dir)
+
+            # 生成文件名（使用微秒确保唯一）
+            timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
+            filename = f"{timestamp}.txt"
+            file_path = os.path.join(log_dir, filename)
+
+            # 如果文件已存在，尝试删除旧文件
+            if os.path.exists(file_path):
+                try:
+                    os.remove(file_path)
+                except PermissionError:
+                    timestamp = datetime.now().strftime("%Y%m%d_%H%M%S_%f")
+                    filename = f"{timestamp}.txt"
+                    file_path = os.path.join(log_dir, filename)
+
             with open(file_path, 'w', encoding='utf-8') as f:
                 # 写入标题
                 f.write("=" * 60 + "\n")
@@ -843,38 +882,91 @@ class MainWindow(QMainWindow):
         self.device_addr_value.setText("--")
         self.device_interval_value.setText("--")
 
+        # 重置传感器状态
+        self.sensor_diag_status = 'N'
+        if self.sensor_status_label:
+            self._update_sensor_status_label('N')
+
         # 启动自动重连检测
         self.start_auto_reconnect()
 
     def start_auto_reconnect(self):
-        """启动自动重连检测"""
+        """启动自动重连检测（带冷却期防抖）"""
+        now = time.time()
+        # 如果距离上次断开不足 5 秒，延迟重连（防止校准期间重复断连死循环）
+        if now - self._last_disconnect_time < 5:
+            cooldown_remain = 5 - int(now - self._last_disconnect_time)
+            self.log(f"⏳ 重连冷却中，{cooldown_remain}秒后尝试重连...")
+            QTimer.singleShot(cooldown_remain * 1000, self._do_start_reconnect)
+            return
+        self._do_start_reconnect()
+
+    def _do_start_reconnect(self):
+        """实际执行重连检测启动"""
         self.last_known_port = self.port_combo.currentText()
         if self.last_known_port:
             self.auto_reconnect_enabled = True
-            self.auto_reconnect_timer.start(1000)  # 每秒检测一次
+            self.auto_reconnect_timer.start(2000)  # 每2秒检测一次
             self.log(f"已开启自动重连检测，监控 {self.last_known_port}")
+        self._last_disconnect_time = time.time()
 
     def on_data_received(self, data: dict):
         """数据接收"""
-        # 解析数据值
-        dewpoint = data.get('dewpoint')
-        dewpoint_atm = data.get('dewpoint_atm')
-        h2o_ppm = data.get('h2o_ppm')
+        try:
+            # 无条件输出原始帧日志，消除日志盲区
+            raw = data.get('raw', '')
+            if raw:
+                self.log(f"[原始] {raw}")
 
-        # 显示解析后的数据（带单位）
-        if dewpoint is not None and h2o_ppm is not None:
-            dp_str = f"Tdf={dewpoint:.2f} °C" if dewpoint is not None else "Tdf=--"
-            dp_atm_str = f"Tdfatm={dewpoint_atm:.2f} °C" if dewpoint_atm is not None else "Tdfatm=--"
-            h2o_str = f"H2O={h2o_ppm:.1f} ppm" if h2o_ppm is not None else "H2O=--"
-            self.log(f"[解析] {dp_str} | {dp_atm_str} | {h2o_str}")
+            # 检查传感器状态
+            sensor_status = data.get('sensor_status', 'N')
 
-        self.data_history.add_record(data)
-        self.current_data = data
-        self.refresh_timer.singleShot(0, self.refresh_display)
+            # 检测错误数据（**** 星号）
+            if '****' in str(raw):
+                self.log("⚠️ 传感器数据异常，可能处于错误状态")
+                if self.sensor_status_label:
+                    self._update_sensor_status_label('E')
+                return  # 丢弃错误帧
+
+            # 更新传感器诊断状态
+            if sensor_status != self.sensor_diag_status:
+                self.sensor_diag_status = sensor_status
+                self._update_sensor_status_label(sensor_status)
+
+            # 解析数据值
+            dewpoint = data.get('dewpoint')
+            dewpoint_atm = data.get('dewpoint_atm')
+            h2o_ppm = data.get('h2o_ppm')
+
+            # 输出解析后的数据（任何状态都显示，方便排查）
+            if dewpoint is not None or h2o_ppm is not None:
+                dp_str = f"Tdf={dewpoint:.2f} °C" if dewpoint is not None else "Tdf=--"
+                dp_atm_str = f"Tdfatm={dewpoint_atm:.2f} °C" if dewpoint_atm is not None else "Tdfatm=--"
+                h2o_str = f"H2O={h2o_ppm:.1f} ppm" if h2o_ppm is not None else "H2O=--"
+                tag = ""
+                if sensor_status == 'A':
+                    tag = " [校准中-冻结值]"
+                elif sensor_status == 'H':
+                    tag = " [清除中-冻结值]"
+                elif sensor_status == 'h':
+                    tag = " [加热中]"
+                self.log(f"[解析] {dp_str} | {dp_atm_str} | {h2o_str}{tag}")
+
+            self.data_history.add_record(data)
+            self.current_data = data
+            self.refresh_timer.singleShot(0, self.refresh_display)
+        except Exception as e:
+            # 兜底捕获异常，防止数据帧异常导致闪退
+            self.log(f"⚠️ 数据处理异常: {e}")
+            import traceback
+            self.log(traceback.format_exc())
 
     def refresh_display(self):
-        """刷新显示"""
-        if hasattr(self, 'current_data') and self.current_data:
+        """刷新显示（带异常保护）"""
+        if not hasattr(self, 'current_data') or not self.current_data:
+            return
+
+        try:
             data = self.current_data
 
             # 解析数据值
@@ -882,13 +974,26 @@ class MainWindow(QMainWindow):
             dewpoint_atm = data.get('dewpoint_atm')
             h2o_ppm = data.get('h2o_ppm')
 
+            # 更新仪表盘
             self.dewpoint_gauge.update_value(dewpoint)
             self.dewpoint_atm_gauge.update_value(dewpoint_atm)
             self.h2o_gauge.update_value(h2o_ppm)
-            
+
             if dewpoint is not None:
                 self.chart.add_data(dewpoint)
-                self.current_value_label.setText(f"{dewpoint:.2f} °C")
+                # 如果在校准/清除中，数值后标注状态
+                if self.sensor_diag_status == 'A':
+                    self.current_value_label.setText(f"{dewpoint:.2f} °C [校准中]")
+                elif self.sensor_diag_status == 'H':
+                    self.current_value_label.setText(f"{dewpoint:.2f} °C [清除中]")
+                elif self.sensor_diag_status == 'h':
+                    self.current_value_label.setText(f"{dewpoint:.2f} °C [加热中]")
+                else:
+                    self.current_value_label.setText(f"{dewpoint:.2f} °C")
+        except Exception as e:
+            import traceback
+            self.log(f"⚠️ 显示刷新异常: {e}")
+            self.log(traceback.format_exc())
 
     def on_connection_status(self, message: str):
         """连接状态变化（用于显示重连状态）"""
@@ -898,6 +1003,48 @@ class MainWindow(QMainWindow):
     def on_error(self, error: str):
         """错误处理"""
         self.log(f"❌ 错误: {error}")
+
+    def _update_sensor_status_label(self, status: str):
+        """更新传感器状态标签
+
+        Args:
+            status: 'N'=正常, 'A'=校准中, 'H'=清除中, 'h'=加热中, 'E'=错误
+        """
+        if not self.sensor_status_label:
+            return
+
+        status_config = {
+            'N': ('📡 正常', '#27ae60', '#e8f8e8', '#d4f4d4', '#a3d9a3'),
+            'A': ('🔄 自动校准中', '#e67e22', '#fef5e7', '#fdebd0', '#f0c36d'),
+            'H': ('🧹 化学清除中', '#8e44ad', '#f4ecf7', '#e8daef', '#c39bd3'),
+            'h': ('🌡️ 传感器加热中', '#2980b9', '#eaf2f8', '#d4e6f1', '#85c1e9'),
+            'E': ('⚠️ 传感器异常', '#e74c3c', '#fdecea', '#fadbd8', '#f1948a'),
+        }
+
+        config = status_config.get(status, status_config['N'])
+        text, color, bg1, bg2, border = config
+
+        self.sensor_status_label.setText(text)
+        self.sensor_status_label.setStyleSheet(f"""
+            color: {color};
+            background: qlineargradient(x1:0, y1:0, x2:1, y2:1,
+                stop:0 {bg1}, stop:1 {bg2});
+            padding: 5px 12px;
+            border-radius: 6px;
+            border: 1px solid {border};
+        """)
+
+        # 更新状态栏消息
+        if status == 'A':
+            self.statusBar().showMessage("🔄 传感器正在自动校准，数据已冻结...")
+        elif status == 'H':
+            self.statusBar().showMessage("🧹 传感器正在化学清除，数据已冻结...")
+        elif status == 'h':
+            self.statusBar().showMessage("🌡️ 传感器正在加热...")
+        elif status == 'E':
+            self.statusBar().showMessage("⚠️ 传感器数据异常，请检查设备状态")
+        else:
+            self.statusBar().showMessage("✅ 传感器工作正常")
 
     def update_device_info(self):
         """更新设备信息（重连后或设备更换时调用）"""
@@ -1498,17 +1645,19 @@ class MainWindow(QMainWindow):
 
     def closeEvent(self, event):
         """关闭事件"""
-        # 停止定时器
+        # 停止所有定时器
         if hasattr(self, 'time_timer'):
             self.time_timer.stop()
         if hasattr(self, 'refresh_timer'):
             self.refresh_timer.stop()
-        
+        if hasattr(self, 'auto_reconnect_timer'):
+            self.auto_reconnect_timer.stop()
+
         if self.read_thread:
             self.read_thread.stop()
-        
+
         if self.client.connected:
             self.client.disconnect()
-        
+
         self.save_config()
         event.accept()

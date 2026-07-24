@@ -220,9 +220,15 @@ class DMT143Client:
         return info
 
     def set_output_format(self) -> bool:
-        """设置输出格式为 Tdf Tdfa H2O"""
+        """设置输出格式为 Tdf Tdfa H2O，可选增强 STAT 状态字段"""
+        # 基础三参数格式（所有固件版本确认支持）
         response = self.send_command('FORM TDF TDFA H2O', wait_time=1.0)
-        return b'OK' in response
+        ok = b'OK' in response
+        if not ok:
+            self.log("⚠️ FORM 基础命令失败")
+        else:
+            self.log("输出格式: Tdf Tdfa H2O")
+        return ok
 
     def query_format(self) -> str:
         """查询当前输出格式"""
@@ -252,25 +258,49 @@ class DMT143Client:
             # 解析纯数字格式: xx xx xxx
             numbers = re.findall(r'[-+]?\d+\.?\d*', text)
             values = [float(n) for n in numbers]
-            
-            # 智能解析
-            dewpoint_candidates = [v for v in values if -100 <= v <= 50]
-            h2o_candidates = [v for v in values if v > 100]
-            
+
+            # 按范围分类每个值，不依赖固定顺序
+            dewpoint_range = lambda v: -100 <= v <= 50
+            small = [v for v in values if dewpoint_range(v)]
+            large = [v for v in values if v > 1000]
+
             if len(values) >= 3:
-                return {
-                    'raw': text,
-                    'dewpoint': values[0] if -100 <= values[0] <= 50 else (dewpoint_candidates[0] if dewpoint_candidates else None),
-                    'dewpoint_atm': values[1] if -100 <= values[1] <= 50 else None,
-                    'h2o_ppm': values[2] if values[2] > 100 else (h2o_candidates[0] if h2o_candidates else None)
-                }
-            elif len(values) == 2:
-                if -100 <= values[0] <= 50:
-                    return {'raw': text, 'dewpoint': values[0], 'h2o_ppm': values[1]}
+                if len(small) >= 2 and len(large) >= 1:
+                    return {
+                        'raw': text,
+                        'dewpoint': small[0],
+                        'dewpoint_atm': small[1],
+                        'h2o_ppm': large[0]
+                    }
+                elif len(small) == 1 and len(large) >= 1:
+                    return {
+                        'raw': text,
+                        'dewpoint': small[0],
+                        'dewpoint_atm': None,
+                        'h2o_ppm': large[0]
+                    }
                 else:
-                    return {'raw': text, 'dewpoint': values[1] if -100 <= values[1] <= 50 else None, 'h2o_ppm': values[0]}
+                    return {
+                        'raw': text,
+                        'dewpoint': values[0] if values[0] <= 100 else None,
+                        'dewpoint_atm': values[1] if len(values) > 1 and values[1] <= 100 else None,
+                        'h2o_ppm': values[2] if len(values) > 2 and values[2] > 100 else None
+                    }
+            elif len(values) == 2:
+                mid = [v for v in values if 50 < v <= 1000]
+                if len(small) == 1 and len(large) == 1:
+                    return {'raw': text, 'dewpoint': small[0], 'dewpoint_atm': None, 'h2o_ppm': large[0]}
+                elif len(small) == 1 and len(mid) == 1:
+                    return {'raw': text, 'dewpoint': small[0], 'dewpoint_atm': None, 'h2o_ppm': mid[0]}
+                elif len(small) == 2:
+                    return {'raw': text, 'dewpoint': small[0], 'dewpoint_atm': small[1], 'h2o_ppm': None}
+                else:
+                    if values[0] <= 100:
+                        return {'raw': text, 'dewpoint': values[0], 'dewpoint_atm': None, 'h2o_ppm': values[1]}
+                    else:
+                        return {'raw': text, 'dewpoint': values[1] if values[1] <= 100 else None, 'dewpoint_atm': None, 'h2o_ppm': values[0]}
             elif len(values) == 1:
-                return {'raw': text, 'dewpoint': None, 'h2o_ppm': values[0]}
+                return {'raw': text, 'dewpoint': None, 'dewpoint_atm': None, 'h2o_ppm': values[0]}
 
         return None
 
@@ -285,7 +315,7 @@ class DMT143Client:
         # 等待一小段时间让设备开始输出
         time.sleep(0.1)
 
-        # 清空启动命令的响应
+        # 清空启动命令的响应和过渡数据
         self.serial_port.reset_input_buffer()
         return True
 
@@ -338,6 +368,9 @@ class DMT143Client:
             if not text:
                 return None
 
+            # 提取传感器状态（FORM 输出中的最后一个字符）
+            sensor_status = self._parse_sensor_status(text)
+
             # 解析带标签格式: Tdf=xx Tdfatm=xx H2O=xxx
             tdf_match = re.search(r'Tdf\s*=\s*([-+]?\d+\.?\d*)', text)
             tdfatm_match = re.search(r'Tdfatm\s*=\s*([-+]?\d+\.?\d*)', text)
@@ -349,43 +382,60 @@ class DMT143Client:
                     'dewpoint': float(tdf_match.group(1)),
                     'dewpoint_atm': float(tdfatm_match.group(1)) if tdfatm_match else None,
                     'h2o_ppm': float(h2o_match.group(1)),
-                    'timestamp': time.time()
+                    'timestamp': time.time(),
+                    'sensor_status': sensor_status
                 }
 
-            # 解析纯数字格式: xx xx xxx
+            # 解析纯数字格式: xx xx xxx [STATUS]
+            # FORM 格式固定为 TDF TDFA H2O，按位置分配最可靠
             numbers = re.findall(r'[-+]?\d+\.?\d*', text)
             if numbers:
                 result = {
                     'raw': text,
-                    'timestamp': time.time()
+                    'timestamp': time.time(),
+                    'sensor_status': sensor_status
                 }
 
-                # 智能解析：识别哪些是露点，哪些是H2O
-                # 露点范围: -100 ~ 50 (°C)
-                # H2O范围: > 100 (ppm)
                 values = [float(n) for n in numbers]
+                n = len(values)
 
-                # 检查是否有合理的三值组合
-                valid_three = False
-                if len(values) >= 3:
-                    # 检查第一个和第二个值是否像露点(小数值)，第三个是否像H2O(大数值)
-                    if values[0] < 100 and values[1] < 100 and values[2] > 1000:
+                if n >= 3:
+                    # FORM TDF TDFA H2O: 位置 0=Tdf, 1=Tdfa, 2=H2O
+                    result['dewpoint'] = values[0]
+                    result['dewpoint_atm'] = values[1]
+                    result['h2o_ppm'] = values[2]
+
+                elif n == 2:
+                    # 两值：先验证合理性再按位置 + 范围分配
+                    small = [v for v in values if -100 <= v <= 50]
+                    mid = [v for v in values if 50 < v <= 1000]
+                    large = [v for v in values if v > 1000]
+
+                    if len(small) == 1 and len(large) == 1:
+                        result['dewpoint'] = small[0]
+                        result['dewpoint_atm'] = None
+                        result['h2o_ppm'] = large[0]
+                    elif len(small) == 1 and len(mid) == 1:
+                        result['dewpoint'] = small[0]
+                        result['dewpoint_atm'] = None
+                        result['h2o_ppm'] = mid[0]
+                    elif len(small) == 2:
+                        result['dewpoint'] = small[0]
+                        result['dewpoint_atm'] = small[1]
+                        result['h2o_ppm'] = None
+                    else:
+                        # 兜底：按位置赋值
                         result['dewpoint'] = values[0]
-                        result['dewpoint_atm'] = values[1]
-                        result['h2o_ppm'] = values[2]
-                        valid_three = True
+                        result['dewpoint_atm'] = None
+                        result['h2o_ppm'] = values[1]
 
-                if not valid_three:
-                    if len(values) >= 2:
-                        if values[0] < 100:
-                            result['dewpoint'] = values[0]
-                            result['h2o_ppm'] = values[1]
-                        else:
-                            result['h2o_ppm'] = values[0]
-                            result['dewpoint'] = values[1] if len(values) > 1 and values[1] < 100 else None
-                    elif len(values) == 1:
-                        # 单值需要更多上下文判断，暂时跳过
-                        return None
+                elif n == 1:
+                    # 单值，可能是 H2O 或露点
+                    if -100 <= values[0] <= 50:
+                        result['dewpoint'] = values[0]
+                    else:
+                        result['h2o_ppm'] = values[0]
+                    result['dewpoint_atm'] = None
 
                 return result
 
@@ -393,6 +443,37 @@ class DMT143Client:
             self.log(f"数据读取失败: {e}")
 
         return None
+
+    @staticmethod
+    def _parse_sensor_status(text: str) -> str:
+        """解析传感器状态字符
+
+        DMT143 FORM 命令中 STAT 修饰符会输出一个字符表示状态：
+          'N' 或空格 = 正常测量
+          'A' = 正在进行自动校准 (AutoCal)
+          'H' = 正在进行化学清除 (Purge)
+          'h' = 传感器正在加热 (Heating)
+
+        Returns:
+            'N'（正常）、'A'（校准）、'H'（清除）、'h'（加热）
+        """
+        # STAT 字段在输出末尾，是最后一个非空白字符
+        text_clean = text.rstrip()
+        if not text_clean:
+            return 'N'
+
+        last_char = text_clean[-1]
+        if last_char in ('A', 'H', 'h'):
+            return last_char
+
+        # 尝试从文本末尾提取（可能在制表符或空格后）
+        parts = text_clean.split('\t')
+        if len(parts) > 1:
+            last_part = parts[-1].strip()
+            if last_part in ('A', 'H', 'h'):
+                return last_part
+
+        return 'N'  # 默认正常状态
 
     def is_connected(self) -> bool:
         """检查连接状态"""

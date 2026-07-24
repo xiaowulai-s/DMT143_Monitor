@@ -1,8 +1,9 @@
 # -*- coding: utf-8 -*-
 """
-曲线图表组件 - 使用PyQtGraph实现
+曲线图表组件 - 极简安全版，避免 pyqtgraph C++ 层崩溃
 """
 
+import math
 from datetime import datetime
 from PyQt5.QtWidgets import QWidget, QVBoxLayout
 from PyQt5.QtCore import Qt, QTimer
@@ -17,34 +18,27 @@ class ChartWidget(QWidget):
         self.max_points = 200
         self.dewpoint_data = []
         self.time_data = []
-        
+        self._point_count = 0
+
         self.setup_ui()
 
     def setup_ui(self):
-        """设置UI"""
         layout = QVBoxLayout(self)
         layout.setContentsMargins(5, 5, 5, 5)
 
-        # 图表（不带标题，因为主窗口已经有了）
         self.plot_widget = pg.PlotWidget()
         self.plot_widget.setBackground('#ffffff')
         self.plot_widget.showGrid(x=True, y=True, alpha=0.3)
-        
-        # 设置Y轴范围
         self.plot_widget.setYRange(-100, 50)
-        
-        # 曲线
+
+        # 延迟创建曲线对象，等 Widget 完全初始化后再用
         self.curve = self.plot_widget.plot(
             pen=pg.mkPen(color='#3498db', width=2)
         )
-        
-        # 标签
+
         self.plot_widget.setLabel('left', '温度', units='°C')
-        
-        # 设置X轴显示时间
         self.plot_widget.getAxis('bottom').setLabel('时间')
-        
-        # 样式
+
         self.plot_widget.setStyleSheet("""
             QWidget {
                 border: 2px solid #4a90d9;
@@ -52,47 +46,75 @@ class ChartWidget(QWidget):
                 background-color: #ffffff;
             }
         """)
-        
+
         layout.addWidget(self.plot_widget)
 
     def add_data(self, value: float):
-        """添加数据点"""
+        """添加数据点——只做 setData，避免频繁调 ticks/YRange 引发 C 层崩溃"""
         if value is None:
             return
-            
-        current_time = datetime.now().strftime("%H:%M:%S")
-        
+
+        # NaN / Inf 过滤
+        try:
+            value = float(value)
+        except (TypeError, ValueError):
+            return
+        if not math.isfinite(value):
+            return
+
+        # 限幅
+        value = max(-120, min(70, value))
+
         self.dewpoint_data.append(value)
-        self.time_data.append(current_time)
-        
+        self.time_data.append(datetime.now().strftime("%H:%M:%S"))
+
         # 保持数据点数量
         if len(self.dewpoint_data) > self.max_points:
             self.dewpoint_data.pop(0)
             self.time_data.pop(0)
-        
-        # 更新曲线（使用x轴为索引）
-        self.curve.setData(self.dewpoint_data)
-        
-        # 设置X轴标签为时间
-        if len(self.time_data) > 0:
-            # 每隔一定数量显示一个标签
-            ticks = []
-            step = max(1, len(self.time_data) // 5)
-            for i in range(0, len(self.time_data), step):
-                ticks.append((i, self.time_data[i]))
-            self.plot_widget.getAxis('bottom').setTicks([ticks])
-        
-        # 自动调整Y轴范围
-        if len(self.dewpoint_data) > 2:
-            y_min = min(self.dewpoint_data) - 10
-            y_max = max(self.dewpoint_data) + 10
-            y_min = max(-100, y_min)
-            y_max = min(50, y_max)
-            self.plot_widget.setYRange(y_min, y_max)
+
+        self._point_count += 1
+
+        # 核心：更新曲线数据（最小渲染调用）
+        try:
+            self.curve.setData(self.dewpoint_data)
+        except Exception:
+            pass
+
+        # 每 20 个数据点才更新一次轴标签和范围（降低渲染频率）
+        if self._point_count % 20 != 0:
+            return
+
+        # X 轴标签
+        try:
+            if len(self.time_data) > 0:
+                ticks = []
+                step = max(1, len(self.time_data) // 5)
+                for i in range(0, len(self.time_data), step):
+                    ticks.append((i, self.time_data[i]))
+                self.plot_widget.getAxis('bottom').setTicks([ticks])
+        except Exception:
+            pass
+
+        # Y 轴范围
+        try:
+            if len(self.dewpoint_data) > 2:
+                y_min = min(self.dewpoint_data) - 10
+                y_max = max(self.dewpoint_data) + 10
+                y_min = max(-100, y_min)
+                y_max = min(50, y_max)
+                if y_max - y_min < 1.0:
+                    y_min -= 5
+                    y_max += 5
+                self.plot_widget.setYRange(y_min, y_max)
+        except Exception:
+            pass
 
     def clear(self):
-        """清空数据"""
         self.dewpoint_data.clear()
         self.time_data.clear()
-        self.curve.setData([])
-
+        self._point_count = 0
+        try:
+            self.curve.setData([])
+        except Exception:
+            pass

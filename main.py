@@ -19,7 +19,7 @@ def main():
     
     # 设置应用信息
     app.setApplicationName("DMT143 Monitor")
-    app.setApplicationVersion("2.5")
+    app.setApplicationVersion("2.6.1")
     app.setOrganizationName("QianYiHui")
     
     # 设置应用图标

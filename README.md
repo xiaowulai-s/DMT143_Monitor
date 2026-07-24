@@ -11,7 +11,7 @@ DMT143_Monitor/
 ├── commands.md                     # 设备命令参考
 ├── dmt143_config.json              # 配置文件
 ├── icon.ico                        # 应用图标
-├── DMT143_Monitor_v2.5.spec       # PyInstaller打包配置
+├── DMT143_Monitor_v2.6.1.spec     # PyInstaller打包配置
 ├── DMT143 User's Guide.pdf        # 设备用户手册
 ├── core/                           # 核心模块
 │   ├── __init__.py
@@ -24,7 +24,7 @@ DMT143_Monitor/
 │   ├── chart_widget.py            # 图表组件
 │   └── dialogs.py                 # 对话框组件
 └── dist/                           # 发布文件
-    └── DMT143_Monitor_v2.5.exe   # 可执行程序
+    └── DMT143_Monitor_v2.6.1.exe  # 可执行程序
 ```
 
 ## 功能特性
@@ -50,6 +50,20 @@ DMT143_Monitor/
 - **设备信息面板**：显示型号、序列号、波特率、地址、输出间隔
 
 ## 版本历史
+
+### v2.6.1 (2026-07-24)
+- **修复 Qt 布局双重 parent 导致的闪退**（gauge_widget progress_fill 被两个 Layout 同时持有）
+- **修复工作线程直接操作 GUI 控件**（serial_client 读线程内写 QTextEdit）
+- **修复主线程与工作线程同时访问串口**（disconnect 顺序调整为先停线程）
+- **修复图表双重刷新导致数据膨胀**（timer 间隔调为 3s）
+- **修复 closeEvent 未停止 auto_reconnect_timer**
+- **修复 auto_save_log 中 os.makedirs 异常未捕获**
+- **修复 H2O 低 ppm 值（≤1000）解析丢失**（从范围判断改为位置解析）
+- **图表渲染优化**：setTicks/setYRange 降频到每 20 帧、NaN/Inf 过滤
+- 添加 ReadThread 异常保护（try-except + 终止超时）
+- 添加 refresh_display 异常保护
+- 添加重连冷却防抖（5 秒）
+- 断线容限从 10 提升到 50（~30s）
 
 ### v2.5 (2026-03-20)
 - 移除报警设置功能（简化界面）
@@ -96,7 +110,7 @@ DMT143_Monitor/
 
 ### 方式一：直接运行（推荐）
 ```
-双击 dist/DMT143_Monitor_v2.5.exe
+双击 dist/DMT143_Monitor_v2.6.1.exe
 ```
 
 ### 方式二：源码运行
