@@ -220,15 +220,21 @@ class DMT143Client:
         return info
 
     def set_output_format(self) -> bool:
-        """设置输出格式为 Tdf Tdfa H2O，可选增强 STAT 状态字段"""
-        # 基础三参数格式（所有固件版本确认支持）
+        """设置输出格式：基础三参数 + 可选 STAT 状态字段"""
+        # 步骤1：基础格式（所有固件必支持）
         response = self.send_command('FORM TDF TDFA H2O', wait_time=1.0)
-        ok = b'OK' in response
-        if not ok:
+        if b'OK' not in response:
             self.log("⚠️ FORM 基础命令失败")
+            return False
+        self.log("输出格式: Tdf Tdfa H2O")
+
+        # 步骤2：尝试添加 STAT 状态字段（固件可能不支持）
+        response = self.send_command('FORM TDF TDFA H2O "#t" STAT', wait_time=1.0)
+        if b'OK' in response:
+            self.log("传感器状态监测: 已启用")
         else:
-            self.log("输出格式: Tdf Tdfa H2O")
-        return ok
+            self.log("传感器状态监测: 不可用（固件不支持 STAT）")
+        return True
 
     def query_format(self) -> str:
         """查询当前输出格式"""

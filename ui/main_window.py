@@ -42,7 +42,7 @@ class ReadThread(QThread):
         self.main_window = main_window
         self.running = True
         self.no_data_count = 0
-        self.max_no_data = 50  # 连续 50 次无数据再判定断线（~5-10秒）
+        self.max_no_data = 15  # 连续 15 次无数据判定断线（~8秒，0.5s timeout × 15）
 
     def run(self):
         """主循环——带异常保护，防止线程崩溃导致闪退"""
@@ -124,13 +124,12 @@ class MainWindow(QMainWindow):
         self.auto_reconnect_timer.timeout.connect(self.check_auto_reconnect)
         self.auto_reconnect_enabled = False
         self.last_known_port = ""
-        self._reconnect_cooldown = 0     # 重连冷却计时（秒）
-        self._last_disconnect_time = 0    # 上次断开时间戳
 
     def init_ui(self):
         """初始化UI"""
-        self.setWindowTitle("DMT143 露点监控系统 v2.6.1")
-        self.setMinimumSize(1200, 850)
+        self.setWindowTitle("DMT143 Monitor")
+        self.setMinimumSize(1024, 620)
+        self.resize(1366, 768)  # 默认适配笔记本分辨率
         
         # 设置应用样式
         self.set_style()
@@ -140,8 +139,8 @@ class MainWindow(QMainWindow):
         self.setCentralWidget(central_widget)
         
         main_layout = QVBoxLayout(central_widget)
-        main_layout.setContentsMargins(15, 15, 15, 15)
-        main_layout.setSpacing(12)
+        main_layout.setContentsMargins(10, 8, 10, 8)
+        main_layout.setSpacing(8)
 
         # 标题栏
         self.create_title_bar(main_layout)
@@ -151,7 +150,7 @@ class MainWindow(QMainWindow):
 
         # 主内容区
         content_layout = QHBoxLayout()
-        content_layout.setSpacing(12)
+        content_layout.setSpacing(8)
         
         # 左侧 - 仪表盘
         left_panel = self.create_gauge_panel()
@@ -214,7 +213,7 @@ class MainWindow(QMainWindow):
     def create_title_bar(self, parent_layout):
         """创建标题栏"""
         title_frame = QFrame()
-        title_frame.setFixedHeight(60)
+        title_frame.setFixedHeight(48)
         title_frame.setStyleSheet("""
             QFrame {
                 background-color: qlineargradient(x1:0, y1:0, x2:1, y2:0,
@@ -230,13 +229,13 @@ class MainWindow(QMainWindow):
         left_info = QVBoxLayout()
         left_info.setSpacing(0)
         
-        title_label = QLabel("📊 DMT143 露点监控系统")
-        title_label.setFont(QFont("Microsoft YaHei", 16, QFont.Bold))
+        title_label = QLabel("📊 DMT143 Monitor")
+        title_label.setFont(QFont("Microsoft YaHei", 14, QFont.Bold))
         title_label.setStyleSheet("color: white; background: transparent;")
         left_info.addWidget(title_label)
         
         subtitle = QLabel("Dewpoint Monitoring System")
-        subtitle.setFont(QFont("Arial", 9))
+        subtitle.setFont(QFont("Arial", 8))
         subtitle.setStyleSheet("color: rgba(255,255,255,0.7); background: transparent;")
         left_info.addWidget(subtitle)
         
@@ -249,13 +248,13 @@ class MainWindow(QMainWindow):
         right_info.setSpacing(0)
         right_info.setAlignment(Qt.AlignRight)
         
-        version = QLabel("Version 2.6.1")
+        version = QLabel("Version 2.6.3")
         version.setFont(QFont("Arial", 9))
         version.setStyleSheet("color: rgba(255,255,255,0.8); background: transparent;")
         right_info.addWidget(version, 0, Qt.AlignRight)
         
         self.status_text = QLabel("🟢 就绪")
-        self.status_text.setFont(QFont("Microsoft YaHei", 10))
+        self.status_text.setFont(QFont("Microsoft YaHei", 9))
         self.status_text.setStyleSheet("color: white; background: transparent;")
         right_info.addWidget(self.status_text, 0, Qt.AlignRight)
         
@@ -266,7 +265,7 @@ class MainWindow(QMainWindow):
     def create_connection_panel(self, parent_layout):
         """创建连接控制面板"""
         conn_frame = QFrame()
-        conn_frame.setFixedHeight(75)
+        conn_frame.setFixedHeight(55)
         conn_frame.setStyleSheet("""
             QFrame {
                 background-color: white;
@@ -421,7 +420,7 @@ class MainWindow(QMainWindow):
             }
         """)
         value_layout = QHBoxLayout(value_frame)
-        value_layout.setContentsMargins(15, 8, 15, 8)
+        value_layout.setContentsMargins(10, 4, 10, 4)
         
         value_title = QLabel("📈 当前露点:")
         value_title.setFont(QFont("Microsoft YaHei", 10))
@@ -429,7 +428,7 @@ class MainWindow(QMainWindow):
         value_layout.addWidget(value_title)
         
         self.current_value_label = QLabel("-- °C")
-        self.current_value_label.setFont(QFont("Consolas", 14, QFont.Bold))
+        self.current_value_label.setFont(QFont("Consolas", 12, QFont.Bold))
         self.current_value_label.setStyleSheet("color: #3498db; background: transparent;")
         value_layout.addWidget(self.current_value_label)
         
@@ -437,7 +436,7 @@ class MainWindow(QMainWindow):
 
         # 传感器状态指示
         self.sensor_status_label = QLabel("📡 正常")
-        self.sensor_status_label.setFont(QFont("Microsoft YaHei", 9, QFont.Bold))
+        self.sensor_status_label.setFont(QFont("Microsoft YaHei", 8, QFont.Bold))
         self.sensor_status_label.setStyleSheet("""
             color: #27ae60;
             background: qlineargradient(x1:0, y1:0, x2:1, y2:1,
@@ -462,113 +461,103 @@ class MainWindow(QMainWindow):
         """)
 
         layout = QVBoxLayout(frame)
-        layout.setContentsMargins(15, 15, 15, 15)
+        layout.setContentsMargins(10, 10, 10, 10)
         layout.setSpacing(10)
 
-        # 设备信息区域
+        # ── 设备信息区域（紧凑2行 × 3列） ──
         device_info_frame = QFrame()
         device_info_frame.setStyleSheet("""
             QFrame {
                 background-color: #f0f7ff;
                 border-radius: 8px;
-                border: 1px solid #d0e0f0;
+                border: none;
             }
         """)
         device_info_layout = QVBoxLayout(device_info_frame)
-        device_info_layout.setContentsMargins(12, 10, 12, 10)
-        device_info_layout.setSpacing(6)
+        device_info_layout.setContentsMargins(10, 6, 10, 6)
+        device_info_layout.setSpacing(4)
 
         device_info_title = QLabel("📱 设备信息")
-        device_info_title.setFont(QFont("Microsoft YaHei", 10, QFont.Bold))
+        device_info_title.setFont(QFont("Microsoft YaHei", 8, QFont.Bold))
         device_info_title.setStyleSheet("color: #2c3e50; background: transparent;")
         device_info_layout.addWidget(device_info_title)
 
-        # 设备信息标签
         info_layout = QGridLayout()
-        info_layout.setSpacing(8)
+        info_layout.setSpacing(4)
 
-        # 型号
-        model_label = QLabel("型号:")
-        model_label.setFont(QFont("Microsoft YaHei", 9))
-        model_label.setStyleSheet("color: #7f8c8d; background: transparent;")
+        # 第1行：型号 | 序列号 | 波特率
         self.device_model_value = QLabel("--")
-        self.device_model_value.setFont(QFont("Microsoft YaHei", 9, QFont.Bold))
+        self.device_model_value.setFont(QFont("Microsoft YaHei", 8))
         self.device_model_value.setStyleSheet("color: #2c3e50; background: transparent;")
-        info_layout.addWidget(model_label, 0, 0)
+        info_layout.addWidget(QLabel("型号:"), 0, 0)
         info_layout.addWidget(self.device_model_value, 0, 1)
 
-        # 序列号
-        serial_label = QLabel("序列号:")
-        serial_label.setFont(QFont("Microsoft YaHei", 9))
-        serial_label.setStyleSheet("color: #7f8c8d; background: transparent;")
         self.device_serial_value = QLabel("--")
-        self.device_serial_value.setFont(QFont("Consolas", 9))
+        self.device_serial_value.setFont(QFont("Consolas", 8))
         self.device_serial_value.setStyleSheet("color: #2c3e50; background: transparent;")
-        info_layout.addWidget(serial_label, 1, 0)
-        info_layout.addWidget(self.device_serial_value, 1, 1)
+        info_layout.addWidget(QLabel("序列号:"), 0, 2)
+        info_layout.addWidget(self.device_serial_value, 0, 3)
 
-        # 波特率
-        baud_label = QLabel("波特率:")
-        baud_label.setFont(QFont("Microsoft YaHei", 9))
-        baud_label.setStyleSheet("color: #7f8c8d; background: transparent;")
         self.device_baud_value = QLabel("--")
-        self.device_baud_value.setFont(QFont("Consolas", 9))
+        self.device_baud_value.setFont(QFont("Consolas", 8))
         self.device_baud_value.setStyleSheet("color: #2c3e50; background: transparent;")
-        info_layout.addWidget(baud_label, 2, 0)
-        info_layout.addWidget(self.device_baud_value, 2, 1)
+        info_layout.addWidget(QLabel("波特率:"), 0, 4)
+        info_layout.addWidget(self.device_baud_value, 0, 5)
 
-        # 串口模式
-        mode_label = QLabel("模式:")
-        mode_label.setFont(QFont("Microsoft YaHei", 9))
-        mode_label.setStyleSheet("color: #7f8c8d; background: transparent;")
+        # 第2行：模式 | 地址 | 输出间隔
         self.device_mode_value = QLabel("--")
-        self.device_mode_value.setFont(QFont("Consolas", 9))
+        self.device_mode_value.setFont(QFont("Consolas", 8))
         self.device_mode_value.setStyleSheet("color: #2c3e50; background: transparent;")
-        info_layout.addWidget(mode_label, 3, 0)
-        info_layout.addWidget(self.device_mode_value, 3, 1)
+        info_layout.addWidget(QLabel("模式:"), 1, 0)
+        info_layout.addWidget(self.device_mode_value, 1, 1)
 
-        # 地址
-        addr_label = QLabel("地址:")
-        addr_label.setFont(QFont("Microsoft YaHei", 9))
-        addr_label.setStyleSheet("color: #7f8c8d; background: transparent;")
         self.device_addr_value = QLabel("--")
-        self.device_addr_value.setFont(QFont("Consolas", 9))
+        self.device_addr_value.setFont(QFont("Consolas", 8))
         self.device_addr_value.setStyleSheet("color: #2c3e50; background: transparent;")
-        info_layout.addWidget(addr_label, 4, 0)
-        info_layout.addWidget(self.device_addr_value, 4, 1)
+        info_layout.addWidget(QLabel("地址:"), 1, 2)
+        info_layout.addWidget(self.device_addr_value, 1, 3)
 
-        # 输出间隔
-        interval_label = QLabel("输出间隔:")
-        interval_label.setFont(QFont("Microsoft YaHei", 9))
-        interval_label.setStyleSheet("color: #7f8c8d; background: transparent;")
         self.device_interval_value = QLabel("--")
-        self.device_interval_value.setFont(QFont("Consolas", 9))
+        self.device_interval_value.setFont(QFont("Consolas", 8))
         self.device_interval_value.setStyleSheet("color: #2c3e50; background: transparent;")
-        info_layout.addWidget(interval_label, 5, 0)
-        info_layout.addWidget(self.device_interval_value, 5, 1)
+        info_layout.addWidget(QLabel("间隔:"), 1, 4)
+        info_layout.addWidget(self.device_interval_value, 1, 5)
+
+        # 统一标签样式
+        for i in range(info_layout.count()):
+            w = info_layout.itemAt(i).widget()
+            if w and isinstance(w, QLabel) and w.text().endswith(':'):
+                w.setFont(QFont("Microsoft YaHei", 8))
+                w.setStyleSheet("color: #7f8c8d; background: transparent;")
 
         device_info_layout.addLayout(info_layout)
+        self._device_info_frame = device_info_frame
         layout.addWidget(device_info_frame)
 
         # 实时数据标题
         panel_title = QLabel("📊 实时数据")
-        panel_title.setFont(QFont("Microsoft YaHei", 11, QFont.Bold))
+        panel_title.setFont(QFont("Microsoft YaHei", 10, QFont.Bold))
         panel_title.setStyleSheet("color: #2c3e50; background: transparent; padding: 3px;")
         layout.addWidget(panel_title)
 
         # 仪表盘
+        from ui.gauge_widget import DEWPOINT_STOPS, H2O_STOPS
+
         self.dewpoint_gauge = GaugeWidget(
-            "露点温度 Tdf", "°C", -100, 20
+            "露点温度 Tdf", "°C", -80, 20,
+            color_stops=DEWPOINT_STOPS
         )
         layout.addWidget(self.dewpoint_gauge)
 
         self.dewpoint_atm_gauge = GaugeWidget(
-            "标准气压露点 Tdfatm", "°C", -100, 20
+            "标准气压露点 Tdfatm", "°C", -80, 20,
+            color_stops=DEWPOINT_STOPS
         )
         layout.addWidget(self.dewpoint_atm_gauge)
 
         self.h2o_gauge = GaugeWidget(
-            "体积含水量 H2O", "ppm", 0, 50000
+            "体积含水量 H2O", "ppm", 0, 30000,
+            color_stops=H2O_STOPS,
         )
         layout.addWidget(self.h2o_gauge)
 
@@ -586,17 +575,18 @@ class MainWindow(QMainWindow):
         """)
         
         layout = QVBoxLayout(frame)
-        layout.setContentsMargins(15, 15, 15, 15)
+        layout.setContentsMargins(10, 10, 10, 10)
         layout.setSpacing(10)
         
         # 实时曲线标题
         chart_title = QLabel("📊 实时曲线")
-        chart_title.setFont(QFont("Microsoft YaHei", 11, QFont.Bold))
+        chart_title.setFont(QFont("Microsoft YaHei", 10, QFont.Bold))
         chart_title.setStyleSheet("color: #2c3e50; background: transparent; padding: 3px;")
         layout.addWidget(chart_title)
         
         # 实时曲线
         self.chart = ChartWidget()
+        self.chart.setMinimumHeight(80)
         layout.addWidget(self.chart, 1)
         
         # 日志
@@ -612,7 +602,7 @@ class MainWindow(QMainWindow):
         log_layout.setContentsMargins(10, 10, 10, 10)
         
         log_title = QLabel("📝 系统日志")
-        log_title.setFont(QFont("Microsoft YaHei", 10, QFont.Bold))
+        log_title.setFont(QFont("Microsoft YaHei", 9, QFont.Bold))
         log_title.setStyleSheet("color: #2c3e50; background: transparent;")
         log_layout.addWidget(log_title)
         
@@ -726,21 +716,27 @@ class MainWindow(QMainWindow):
             self.disconnect_btn.setEnabled(True)
             self.port_combo.setEnabled(False)
 
-            # 更新状态
             mode_text = "RS485" if self.client.rs485_mode else "RS232"
-            self.status_text.setText(f"🟢 已连接 ({mode_text})")
-            self.statusBar().showMessage(f"✅ 已连接到: {port} ({mode_text}模式)")
+            self.status_text.setText(f"🟡 初始化 ({mode_text})")
 
-            # 重置设备状态，确保可以重新开始
+            # 重置设备状态
             self.client.reset_device()
             self.log("设备状态已重置")
 
-            # 获取并显示设备信息
-            self.update_device_info()
+            # 获取设备信息
+            ok_info = self.update_device_info()
 
             # 设置输出格式
-            ok = self.client.set_output_format()
-            self.log(f"输出格式: {'OK' if ok else 'FAIL'}")
+            ok_form = self.client.set_output_format()
+            self.log(f"输出格式: {'OK' if ok_form else 'FAIL'}")
+
+            if not ok_info or not ok_form:
+                self.status_text.setText(f"🔴 连接异常 ({mode_text})")
+                self.statusBar().showMessage(f"⚠️ 设备响应异常，请检查连接")
+                self.log("⚠️ 设备通信异常，尝试启动数据流...")
+            else:
+                self.status_text.setText(f"🟢 已连接 ({mode_text})")
+                self.statusBar().showMessage(f"✅ 已连接到: {port} ({mode_text}模式)")
 
             # 启动连续读取
             self.client.start_continuous_reading()
@@ -753,7 +749,7 @@ class MainWindow(QMainWindow):
             self.read_thread.error_occurred.connect(self.on_error)
             self.read_thread.device_disconnected.connect(self.on_device_disconnected)
             self.read_thread.start()
-
+            self.log(f"✅ 数据采集已启动 ({port})")
             self.log(f"✅ 已成功连接到 {port} ({mode_text}模式)")
         else:
             QMessageBox.critical(self, "❌ 错误", "连接失败，请检查设备是否正确连接")
@@ -827,7 +823,7 @@ class MainWindow(QMainWindow):
             with open(file_path, 'w', encoding='utf-8') as f:
                 # 写入标题
                 f.write("=" * 60 + "\n")
-                f.write("DMT143 露点监控系统 - 运行日志\n")
+                f.write("DMT143 Monitor - 运行日志\n")
                 f.write(f"记录时间: {datetime.now().strftime('%Y-%m-%d %H:%M:%S')}\n")
                 f.write("=" * 60 + "\n\n")
 
@@ -891,14 +887,7 @@ class MainWindow(QMainWindow):
         self.start_auto_reconnect()
 
     def start_auto_reconnect(self):
-        """启动自动重连检测（带冷却期防抖）"""
-        now = time.time()
-        # 如果距离上次断开不足 5 秒，延迟重连（防止校准期间重复断连死循环）
-        if now - self._last_disconnect_time < 5:
-            cooldown_remain = 5 - int(now - self._last_disconnect_time)
-            self.log(f"⏳ 重连冷却中，{cooldown_remain}秒后尝试重连...")
-            QTimer.singleShot(cooldown_remain * 1000, self._do_start_reconnect)
-            return
+        """启动自动重连检测（立即开始，无冷却）"""
         self._do_start_reconnect()
 
     def _do_start_reconnect(self):
@@ -908,7 +897,6 @@ class MainWindow(QMainWindow):
             self.auto_reconnect_enabled = True
             self.auto_reconnect_timer.start(2000)  # 每2秒检测一次
             self.log(f"已开启自动重连检测，监控 {self.last_known_port}")
-        self._last_disconnect_time = time.time()
 
     def on_data_received(self, data: dict):
         """数据接收"""
@@ -1046,8 +1034,8 @@ class MainWindow(QMainWindow):
         else:
             self.statusBar().showMessage("✅ 传感器工作正常")
 
-    def update_device_info(self):
-        """更新设备信息（重连后或设备更换时调用）"""
+    def update_device_info(self) -> bool:
+        """更新设备信息，返回是否成功"""
         device_info = self.client.get_device_info()
         if device_info:
             model = device_info.get('model', 'Unknown')
@@ -1078,8 +1066,10 @@ class MainWindow(QMainWindow):
             self.log(f"   设备地址: {addr}")
             self.log(f"   输出间隔: {interval}")
             self.log("=" * 50)
+            return True
         else:
             self.log("⚠️ 无法获取设备信息")
+            return False
 
     def log(self, message: str):
         """输出日志"""
@@ -1118,7 +1108,7 @@ class MainWindow(QMainWindow):
                 with open(file_path, 'w', encoding='utf-8') as f:
                     # 写入标题
                     f.write("=" * 60 + "\n")
-                    f.write("DMT143 露点监控系统 - 运行日志\n")
+                    f.write("DMT143 Monitor - 运行日志\n")
                     f.write(f"记录时间: {datetime.now().strftime('%Y-%m-%d %H:%M:%S')}\n")
                     f.write("=" * 60 + "\n\n")
 

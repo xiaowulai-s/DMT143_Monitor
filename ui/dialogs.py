@@ -148,14 +148,14 @@ class AboutDialog(QDialog):
         layout.setSpacing(15)
 
         # 标题
-        title = QLabel("DMT143 露点监控系统")
+        title = QLabel("DMT143 Monitor")
         title.setFont(QFont("Arial", 16, QFont.Bold))
         title.setAlignment(Qt.AlignCenter)
         title.setStyleSheet("color: #2c3e50;")
         layout.addWidget(title)
 
         # 版本
-        version = QLabel("Version 2.6.1")
+        version = QLabel("Version 2.6.3")
         version.setFont(QFont("Arial", 11))
         version.setAlignment(Qt.AlignCenter)
         version.setStyleSheet("color: #7f8c8d;")
@@ -163,10 +163,12 @@ class AboutDialog(QDialog):
 
         # 说明
         info = QLabel(
-            "基于 PyQt5 构建的现代化监控系统\n"
-            "支持实时数据采集、曲线显示、历史日志等功能\n\n"
-            "硬件: DMT143 露点变送器\n"
-            "通信: RS485 / RS232 串口"
+            "DMT143 露点变送器专用监控软件\n\n"
+            "实时数据采集与可视化\n"
+            "露点温度、标准气压露点、体积含水量\n"
+            "趋势曲线 · 仪表盘 · 日志管理\n\n"
+            "支持 RS485 / RS232 串口通信\n"
+            "断线自动重连 · 数据自动保存"
         )
         info.setFont(QFont("Arial", 10))
         info.setAlignment(Qt.AlignCenter)
